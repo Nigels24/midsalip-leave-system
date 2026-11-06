@@ -5,7 +5,7 @@ CREATE TYPE "Role" AS ENUM ('EMPLOYEE', 'DEPT_HEAD', 'HRMO', 'APPROVER');
 CREATE TYPE "Sex" AS ENUM ('MALE', 'FEMALE');
 
 -- CreateEnum
-CREATE TYPE "EmploymentStatus" AS ENUM ('PERMANENT', 'CASUAL', 'ELECTIVE', 'COTERMINOUS', 'CONTRACTUAL');
+CREATE TYPE "EmploymentStatus" AS ENUM ('PERMANENT', 'CASUAL', 'COS', 'JO', 'ELECTIVE', 'COTERMINOUS');
 
 -- CreateEnum
 CREATE TYPE "CreditKind" AS ENUM ('VL', 'SL');
@@ -50,6 +50,8 @@ CREATE TABLE "Employee" (
     "role" "Role" NOT NULL,
     "username" TEXT NOT NULL,
     "passwordHash" TEXT NOT NULL,
+    "signature" TEXT,
+    "signatureUpdatedAt" TIMESTAMP(3),
     "active" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -62,8 +64,12 @@ CREATE TABLE "LeaveType" (
     "code" VARCHAR(10) NOT NULL,
     "name" TEXT NOT NULL,
     "legalBasis" TEXT NOT NULL,
+    "ruleNote" TEXT,
     "deductsFrom" "CreditKind",
     "detailKind" "LeaveDetailKind" NOT NULL DEFAULT 'NONE',
+    "convertible" BOOLEAN NOT NULL DEFAULT false,
+    "maxDaysPerYear" DECIMAL(7,3),
+    "eligibleStatuses" "EmploymentStatus"[] DEFAULT ARRAY[]::"EmploymentStatus"[],
     "sortOrder" INTEGER NOT NULL,
 
     CONSTRAINT "LeaveType_pkey" PRIMARY KEY ("code")
@@ -74,6 +80,7 @@ CREATE TABLE "LeaveApplication" (
     "id" TEXT NOT NULL,
     "refNo" TEXT NOT NULL,
     "employeeId" TEXT NOT NULL,
+    "filedById" TEXT,
     "typeCode" TEXT NOT NULL,
     "details" JSONB NOT NULL,
     "startDate" DATE NOT NULL,
@@ -185,6 +192,9 @@ CREATE INDEX "LeaveApplication_employeeId_status_idx" ON "LeaveApplication"("emp
 CREATE INDEX "LeaveApplication_status_idx" ON "LeaveApplication"("status");
 
 -- CreateIndex
+CREATE INDEX "LeaveApplication_filedById_idx" ON "LeaveApplication"("filedById");
+
+-- CreateIndex
 CREATE INDEX "ApprovalAction_applicationId_idx" ON "ApprovalAction"("applicationId");
 
 -- CreateIndex
@@ -207,6 +217,9 @@ ALTER TABLE "Employee" ADD CONSTRAINT "Employee_officeId_fkey" FOREIGN KEY ("off
 
 -- AddForeignKey
 ALTER TABLE "LeaveApplication" ADD CONSTRAINT "LeaveApplication_employeeId_fkey" FOREIGN KEY ("employeeId") REFERENCES "Employee"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "LeaveApplication" ADD CONSTRAINT "LeaveApplication_filedById_fkey" FOREIGN KEY ("filedById") REFERENCES "Employee"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "LeaveApplication" ADD CONSTRAINT "LeaveApplication_typeCode_fkey" FOREIGN KEY ("typeCode") REFERENCES "LeaveType"("code") ON DELETE RESTRICT ON UPDATE CASCADE;

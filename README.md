@@ -9,7 +9,7 @@ Runs on a Windows PC over the municipal LAN, or online on Render with a Neon Pos
 ## Prerequisites
 
 - **Node.js** LTS (20.19 or newer)
-- **PostgreSQL 16**: either **Docker** (easiest, see step 4) or a native PostgreSQL 16 install.
+- **PostgreSQL 16** running in **Docker** (see step 4). A native PostgreSQL 16 install also works.
   In production, a **Neon** database works too.
 
 ## Setup
@@ -27,8 +27,9 @@ cp .env.example .env          # Windows: copy .env.example .env
 
 # 4. Start PostgreSQL 16 with the database "midsalip_leave" already created.
 #    With Docker (matches the DATABASE_URL in .env.example):
-docker run --name midsalip-postgres -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=midsalip_leave \
-  -p 5432:5432 -v midsalip-pgdata:/var/lib/postgresql/data -d postgres:16
+#    The database listens on port 5433 on this PC, so it does not clash with another PostgreSQL on 5432.
+docker run -d --name midsalip-postgres -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=midsalip_leave \
+  -p 5433:5432 -v midsalip-pgdata:/var/lib/postgresql/data postgres:16-alpine
 #    Later: docker start midsalip-postgres
 #    With a native install instead, run in psql:  CREATE DATABASE midsalip_leave;
 

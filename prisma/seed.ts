@@ -7,7 +7,7 @@ import { format } from "date-fns";
 import { Prisma, type EmploymentStatus, type Role, type Sex } from "../src/generated/prisma/client";
 import { db } from "../src/lib/db";
 import { MONTHLY_ACCRUAL } from "../src/lib/constants";
-import { LEAVE_TYPES } from "../src/lib/leave-types";
+import { CREDIT_EARNING_STATUSES, LEAVE_TYPES } from "../src/lib/leave-types";
 import { toDbDate } from "../src/lib/dates";
 import { normalizeUsername } from "../src/lib/utils";
 
@@ -134,9 +134,19 @@ async function main() {
     await db.office.update({ where: { id }, data: { headId: head.id } });
   }
 
-  // 4. Leave types.
+  // 4. Leave types (defaults explained at the top of src/lib/leave-types.ts).
   for (const [index, t] of LEAVE_TYPES.entries()) {
-    const data = { name: t.name, legalBasis: t.legalBasis, deductsFrom: t.deductsFrom, detailKind: t.detailKind, sortOrder: index + 1 };
+    const data = {
+      name: t.name,
+      legalBasis: t.legalBasis,
+      ruleNote: t.ruleNote,
+      deductsFrom: t.deductsFrom,
+      detailKind: t.detailKind,
+      convertible: t.convertible,
+      maxDaysPerYear: t.maxDaysPerYear,
+      eligibleStatuses: t.eligibleStatuses,
+      sortOrder: index + 1,
+    };
     await db.leaveType.upsert({ where: { code: t.code }, update: data, create: { code: t.code, ...data } });
   }
 
@@ -165,8 +175,9 @@ async function main() {
     }
   }
 
-  // 7. Monthly accrual Jan–Aug 2026 (1.25 VL + 1.25 SL) for active, non-elective employees.
-  const earners = await db.employee.findMany({ where: { active: true, status: { not: "ELECTIVE" } } });
+  // 7. Monthly accrual Jan–Aug 2026 (1.25 VL + 1.25 SL) for active employees covered by
+  //    civil service leave rules (not Elective, COS or JO).
+  const earners = await db.employee.findMany({ where: { active: true, status: { in: CREDIT_EARNING_STATUSES } } });
   const accrual = new Prisma.Decimal(MONTHLY_ACCRUAL);
   for (const employee of earners) {
     for (const month of ACCRUAL_MONTHS) {
@@ -199,7 +210,7 @@ async function main() {
 }
 
 async function printSummary(earnerCount: number) {
-  const [offices, officesWithHead, employees, leaveTypes, holidays, openingRows, accrualRows] = await Promise.all([
+  const [offices, officesWithHead, employees, leaveTypes, holidays, openingRows, accrualRows, applications, noFiler] = await Promise.all([
     db.office.count(),
     db.office.count({ where: { headId: { not: null } } }),
     db.employee.count(),
@@ -207,6 +218,8 @@ async function printSummary(earnerCount: number) {
     db.holiday.count(),
     db.ledgerEntry.count({ where: { particulars: OPENING_PARTICULARS } }),
     db.ledgerEntry.count({ where: { accrualMonth: { not: null } } }),
+    db.leaveApplication.count(),
+    db.leaveApplication.count({ where: { filedById: null } }),
   ]);
 
   console.log("\nSeed complete:");
@@ -215,6 +228,8 @@ async function printSummary(earnerCount: number) {
   console.log(`  leave types  ${leaveTypes}`);
   console.log(`  holidays     ${holidays}`);
   console.log(`  ledger       ${openingRows} opening rows, ${accrualRows} accrual rows (expected ${earnerCount * ACCRUAL_MONTHS.length * 2})`);
+  // Every application must record who encoded it (the employee, or an HRMO on their behalf).
+  console.log(`  applications ${applications} (without filedBy: ${noFiler})`);
 
   // Sanity check against the prototype: Liza Dalisay (hrmo).
   const liza = await db.employee.findUniqueOrThrow({ where: { username: "hrmo" } });

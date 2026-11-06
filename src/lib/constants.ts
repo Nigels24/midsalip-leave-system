@@ -1,5 +1,5 @@
 // App-wide labels and fixed values.
-import type { ApplicationStatus, Role } from "../generated/prisma/client";
+import type { ApplicationStatus, EmploymentStatus, Role } from "../generated/prisma/client";
 
 export const APP = {
   name: "MMH Leave",
@@ -15,6 +15,15 @@ export const ROLE_LABELS: Record<Role, string> = {
   DEPT_HEAD: "Department Head",
   HRMO: "HRMO",
   APPROVER: "Approving Authority",
+};
+
+export const EMPLOYMENT_STATUS_LABELS: Record<EmploymentStatus, string> = {
+  PERMANENT: "Permanent",
+  CASUAL: "Casual",
+  COS: "Contract of Service (COS)",
+  JO: "Job Order (JO)",
+  ELECTIVE: "Elective",
+  COTERMINOUS: "Coterminous",
 };
 
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {

@@ -24,12 +24,15 @@ enum Sex {
   FEMALE
 }
 
+// COS = Contract of Service, JO = Job Order. COS and JO workers are not covered by
+// civil service leave rules, so they earn no VL/SL credits (see src/lib/leave-types.ts).
 enum EmploymentStatus {
   PERMANENT
   CASUAL
+  COS
+  JO
   ELECTIVE
   COTERMINOUS
-  CONTRACTUAL
 }
 
 enum CreditKind {
@@ -98,16 +101,20 @@ model Employee {
   role                Role
   username            String           @unique // always lowercase, see normalizeUsername()
   passwordHash        String
+  // E-signature as a data URL ("data:image/png;base64,..."), stamped on CS Form 6 once the person signs a step
+  signature           String?          @db.Text
+  signatureUpdatedAt  DateTime?
   active              Boolean          @default(true)
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 
-  headOf        Office?            @relation("OfficeHead")
-  applications  LeaveApplication[]
-  actions       ApprovalAction[]
-  ledgerEntries LedgerEntry[]
-  notifications Notification[]
-  auditLogs     AuditLog[]
+  headOf            Office?            @relation("OfficeHead")
+  applications      LeaveApplication[] @relation("Applicant") // leave applied for BY this person
+  filedApplications LeaveApplication[] @relation("FiledBy") // applications this person encoded (own or on behalf)
+  actions           ApprovalAction[]
+  ledgerEntries     LedgerEntry[]
+  notifications     Notification[]
+  auditLogs         AuditLog[]
 
   @@index([officeId])
 }
@@ -115,20 +122,27 @@ model Employee {
 // ── Leave ────────────────────────────────────────────────────
 
 model LeaveType {
-  code         String             @id @db.VarChar(10)
-  name         String
-  legalBasis   String             @db.Text
-  deductsFrom  CreditKind? // null = does not use VL/SL credits
-  detailKind   LeaveDetailKind    @default(NONE) // which "Details of Leave" box on CS Form 6
-  sortOrder    Int
-  applications LeaveApplication[]
+  code             String             @id @db.VarChar(10)
+  name             String
+  legalBasis       String             @db.Text
+  ruleNote         String?            @db.Text // short plain-language rule, e.g. "105 calendar days per pregnancy"
+  deductsFrom      CreditKind? // null = does not use VL/SL credits
+  detailKind       LeaveDetailKind    @default(NONE) // which "Details of Leave" box on CS Form 6
+  convertible      Boolean            @default(false) // can unused days be converted to cash (monetization / terminal leave)
+  maxDaysPerYear   Decimal?           @db.Decimal(7, 3) // null = no yearly cap (VL/SL: limited by the credit balance)
+  eligibleStatuses EmploymentStatus[] @default([]) // employment types allowed to file this leave
+  sortOrder        Int
+  applications     LeaveApplication[]
 }
 
 model LeaveApplication {
   id          String            @id @default(cuid())
   refNo       String            @unique // MMH-YYYY-XXXX-XXXX, encoded in the QR code
   employeeId  String
-  employee    Employee          @relation(fields: [employeeId], references: [id])
+  employee    Employee          @relation("Applicant", fields: [employeeId], references: [id])
+  // Who encoded the application: the employee, or an HRMO filing on the employee's behalf.
+  filedById   String?
+  filedBy     Employee?         @relation("FiledBy", fields: [filedById], references: [id])
   typeCode    String
   leaveType   LeaveType         @relation(fields: [typeCode], references: [code])
   // e.g. {location, locationSpec} | {sickWhere, illness} | {study} | {illness}
@@ -156,6 +170,7 @@ model LeaveApplication {
 
   @@index([employeeId, status])
   @@index([status])
+  @@index([filedById])
 }
 
 model ApprovalAction {
@@ -208,14 +223,14 @@ model Notification {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   actorId   String? // null for public actions (VERIFY_QR from the verify page)
   actor     Employee? @relation(fields: [actorId], references: [id])
   // FILE_LEAVE, RECOMMENDED, NOT_RECOMMENDED, CERTIFIED, APPROVED, DISAPPROVED,
   // CANCEL, POST_ACCRUAL, CREATE_ACCOUNT, UPDATE_ACCOUNT, LOGIN, VERIFY_QR
   action    String
-  detail    String   @db.Text
-  createdAt DateTime @default(now())
+  detail    String    @db.Text
+  createdAt DateTime  @default(now())
 
   @@index([createdAt])
 }
