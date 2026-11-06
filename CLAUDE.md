@@ -1,0 +1,22 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+@AGENTS.md
+
+## Ground rules
+
+- **The developer runs all commands that install, migrate, seed, build, or touch git.** Write the files, then list the exact commands to run. Don't run `npm install`, `npx shadcn add`, `prisma migrate`/`db seed`/`reset`, or `git init`/`commit`/`push`/`pull` yourself.
+- The stack is fixed by the manuscript (Chapter 3, Table 3.2): Next.js, Prisma, PostgreSQL 16, Tailwind CSS, QR code generation, deployed on a Windows PC over the municipal LAN. (The manuscript originally specified MySQL; the owner chose PostgreSQL so the system can also be deployed on Render with a Neon database.) Don't add other technologies. Never add next-auth: auth is a custom signed-cookie session using `jose` and `bcryptjs`.
+- Keep the code simple enough for a student to explain every file at the thesis defense.
+- This system must reproduce the behavior of the localStorage prototype in `../midsalip-system-prototype` (business rules are in its `src/lib/engine.ts`).
+
+## Prisma 7 specifics
+
+- The client is generated into `src/generated/prisma`, which is gitignored. Import it from `src/generated/prisma/client`, not from `@prisma/client`. Regenerate it after any schema change with `npm run db:generate`, because `migrate dev` doesn't do it.
+- `prisma.config.ts` holds the database URL and the seed command. Prisma doesn't read `.env` by itself, so `dotenv/config` loads it.
+- The database connection goes through `@prisma/adapter-pg` in `src/lib/db.ts`, which passes `DATABASE_URL` to it as `connectionString`.
+- PostgreSQL compares text case-sensitively. Store usernames through `normalizeUsername()` (`src/lib/utils.ts`) and normalize login input the same way. Search and filter boxes use `{ contains: q, mode: "insensitive" }` to match the prototype's case-insensitive search.
+- Store every credit and day amount as `Decimal(7,3)`, and do the math with `Prisma.Decimal`, never JS floats.
+- `@db.Date` columns: write them with `toDbDate("YYYY-MM-DD")` and read them with `fromDbDate()` (both in `src/lib/dates.ts`).
+- Pages that query the database at request time call `await connection()` from `next/server`. Without it, the page would be prerendered at build time.

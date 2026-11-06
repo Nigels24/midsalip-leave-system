@@ -1,0 +1,233 @@
+// Database schema for the MMH Leave system (PostgreSQL 16).
+// All leave credit and day amounts use Decimal(7,3), never floats.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Enums ────────────────────────────────────────────────────
+
+enum Role {
+  EMPLOYEE
+  DEPT_HEAD
+  HRMO
+  APPROVER
+}
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum EmploymentStatus {
+  PERMANENT
+  CASUAL
+  ELECTIVE
+  COTERMINOUS
+  CONTRACTUAL
+}
+
+enum CreditKind {
+  VL
+  SL
+}
+
+enum LeaveDetailKind {
+  NONE
+  VACATION
+  SICK
+  STUDY
+  WOMEN
+}
+
+enum Commutation {
+  NOT_REQUESTED
+  REQUESTED
+}
+
+enum ApplicationStatus {
+  FOR_RECOMMENDATION
+  FOR_CERTIFICATION
+  FOR_APPROVAL
+  APPROVED
+  DISAPPROVED
+  CANCELLED
+}
+
+enum ActionStep {
+  FILED
+  RECOMMENDED
+  NOT_RECOMMENDED
+  CERTIFIED
+  APPROVED
+  DISAPPROVED
+  CANCELLED
+}
+
+// ── People ───────────────────────────────────────────────────
+
+model Office {
+  id        String     @id @db.VarChar(16) // short code, e.g. "MTO"
+  name      String
+  headId    String?    @unique
+  head      Employee?  @relation("OfficeHead", fields: [headId], references: [id], onDelete: SetNull)
+  employees Employee[] @relation("OfficeEmployees")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Employee {
+  id                  String           @id @default(cuid())
+  employeeNo          String           @unique
+  firstName           String
+  middleInitial       String?
+  lastName            String
+  sex                 Sex
+  position            String
+  salaryGrade         Int
+  monthlySalary       Decimal          @db.Decimal(12, 2)
+  officeId            String
+  office              Office           @relation("OfficeEmployees", fields: [officeId], references: [id])
+  status              EmploymentStatus
+  originalAppointment DateTime         @db.Date
+  role                Role
+  username            String           @unique // always lowercase, see normalizeUsername()
+  passwordHash        String
+  active              Boolean          @default(true)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  headOf        Office?            @relation("OfficeHead")
+  applications  LeaveApplication[]
+  actions       ApprovalAction[]
+  ledgerEntries LedgerEntry[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@index([officeId])
+}
+
+// ── Leave ────────────────────────────────────────────────────
+
+model LeaveType {
+  code         String             @id @db.VarChar(10)
+  name         String
+  legalBasis   String             @db.Text
+  deductsFrom  CreditKind? // null = does not use VL/SL credits
+  detailKind   LeaveDetailKind    @default(NONE) // which "Details of Leave" box on CS Form 6
+  sortOrder    Int
+  applications LeaveApplication[]
+}
+
+model LeaveApplication {
+  id          String            @id @default(cuid())
+  refNo       String            @unique // MMH-YYYY-XXXX-XXXX, encoded in the QR code
+  employeeId  String
+  employee    Employee          @relation(fields: [employeeId], references: [id])
+  typeCode    String
+  leaveType   LeaveType         @relation(fields: [typeCode], references: [code])
+  // e.g. {location, locationSpec} | {sickWhere, illness} | {study} | {illness}
+  details     Json
+  startDate   DateTime          @db.Date
+  endDate     DateTime          @db.Date
+  days        Decimal           @db.Decimal(7, 3)
+  commutation Commutation       @default(NOT_REQUESTED)
+  status      ApplicationStatus @default(FOR_RECOMMENDATION)
+  filedAt     DateTime          @default(now())
+
+  // Snapshot of the HRMO certification (CS Form 6, item 7.A)
+  certAsOf      DateTime? @db.Date
+  certVlTotal   Decimal?  @db.Decimal(7, 3)
+  certSlTotal   Decimal?  @db.Decimal(7, 3)
+  certVlLess    Decimal?  @db.Decimal(7, 3)
+  certSlLess    Decimal?  @db.Decimal(7, 3)
+  certVlBalance Decimal?  @db.Decimal(7, 3)
+  certSlBalance Decimal?  @db.Decimal(7, 3)
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  actions       ApprovalAction[]
+  ledgerEntries LedgerEntry[]
+
+  @@index([employeeId, status])
+  @@index([status])
+}
+
+model ApprovalAction {
+  id            String           @id @default(cuid())
+  applicationId String
+  application   LeaveApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  step          ActionStep
+  actorId       String
+  actor         Employee         @relation(fields: [actorId], references: [id])
+  remarks       String           @default("") @db.Text
+  createdAt     DateTime         @default(now())
+
+  @@index([applicationId])
+}
+
+// ── Leave card (credits) ─────────────────────────────────────
+
+model LedgerEntry {
+  id            String            @id @default(cuid())
+  employeeId    String
+  employee      Employee          @relation(fields: [employeeId], references: [id])
+  date          DateTime          @db.Date
+  particulars   String
+  kind          CreditKind
+  earned        Decimal           @default(0) @db.Decimal(7, 3)
+  deducted      Decimal           @default(0) @db.Decimal(7, 3)
+  applicationId String?
+  application   LeaveApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  accrualMonth  String? // "YYYY-MM", only on monthly accrual rows
+  createdAt     DateTime          @default(now())
+
+  // A month can never be posted twice. (PostgreSQL allows many NULLs, so other rows are unaffected.)
+  @@unique([employeeId, kind, accrualMonth])
+  @@index([employeeId, kind, date])
+}
+
+// ── Notifications & audit ────────────────────────────────────
+
+model Notification {
+  id            String   @id @default(cuid())
+  userId        String
+  user          Employee @relation(fields: [userId], references: [id])
+  title         String
+  body          String   @db.Text
+  applicationId String?
+  read          Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@index([userId, read])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String? // null for public actions (VERIFY_QR from the verify page)
+  actor     Employee? @relation(fields: [actorId], references: [id])
+  // FILE_LEAVE, RECOMMENDED, NOT_RECOMMENDED, CERTIFIED, APPROVED, DISAPPROVED,
+  // CANCEL, POST_ACCRUAL, CREATE_ACCOUNT, UPDATE_ACCOUNT, LOGIN, VERIFY_QR
+  action    String
+  detail    String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ── Settings ─────────────────────────────────────────────────
+
+model Holiday {
+  date DateTime @id @db.Date
+  name String
+}
+
+model AppSetting {
+  key   String @id // e.g. "lastAccrualMonth"
+  value String
+}
