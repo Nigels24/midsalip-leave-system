@@ -2,7 +2,7 @@
 //   FOR_RECOMMENDATION -> head of the applicant's office
 //   FOR_CERTIFICATION  -> any active HRMO (certifies the leave credits, CS Form 6 item 7.A)
 //   FOR_APPROVAL       -> any active APPROVER (the Municipal Mayor)
-import type { ActionStep, ApplicationStatus } from "../../generated/prisma/client";
+import type { ActionStep, ApplicationStatus, Prisma, Role } from "../../generated/prisma/client";
 import { isOpen } from "../../lib/constants";
 import { toDbDate, todayInManila } from "../../lib/dates";
 import { fullName } from "../../lib/utils";
@@ -42,6 +42,22 @@ async function idsWithRole(client: DbClient, role: "HRMO" | "APPROVER") {
 /** Is this person an assigned officer for the application's current step? */
 export async function canAct(client: DbClient, application: Routable, actorId: string) {
   return (await actorsFor(client, application)).includes(actorId);
+}
+
+/**
+ * Database filter for "applications waiting for this person's action": the list version of
+ * actorsFor(), used by the For My Action page and the sidebar badge.
+ */
+export function waitingForWhere(person: { id: string; role: Role }): Prisma.LeaveApplicationWhereInput {
+  const steps: Prisma.LeaveApplicationWhereInput[] = [
+    // Recommendation goes to the head of the applicant's office, WHATEVER their role:
+    // the HRMO and the mayor also head an office. Their own leave never waits here,
+    // because fileLeave sends a head's own leave straight to certification.
+    { status: "FOR_RECOMMENDATION", employee: { office: { headId: person.id } }, employeeId: { not: person.id } },
+  ];
+  if (person.role === "HRMO") steps.push({ status: "FOR_CERTIFICATION" });
+  if (person.role === "APPROVER") steps.push({ status: "FOR_APPROVAL" });
+  return { OR: steps };
 }
 
 // Used in the applicant's notification: "Your Vacation Leave (...) was certified by the HRMO by ..."

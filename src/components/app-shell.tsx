@@ -35,7 +35,9 @@ export function AppShell({ user, badges, children }: Props) {
       </div>
       <div className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
         {items.map((n) => {
-          const active = pathname === n.href || (n.href !== "/dashboard" && pathname.startsWith(`${n.href}/`));
+          // Also active on nested pages: /applications/abc highlights "My Applications".
+          // (The "/" after the href keeps /apply from matching /applications.)
+          const active = pathname === n.href || pathname.startsWith(`${n.href}/`);
           const count = n.badge ? badges[n.badge] : 0;
           return (
             <Link

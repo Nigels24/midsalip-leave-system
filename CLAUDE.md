@@ -25,8 +25,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - The business rules live in `src/server/leave/` (port of the prototype's `src/lib/engine.ts` plus the panel revisions): `credits.ts` (balance, pending, available), `eligibility.ts` (`getLeaveOptions`, `validateEligibility`), `filing.ts` (`fileLeave`), `workflow.ts` (`actorsFor`, `canAct`, `actOn`, `cancelApplication`), `errors.ts` (`LeaveError`), `shared.ts` (client type, transaction, notify, audit). Import from `src/server/leave`.
 - **Every** change to applications, approvals, credits, notifications or the audit trail for leave goes through these functions. Pages and server actions never write those tables directly; they check the role (`requireRole`), call the function, and show `LeaveError.message` to the user. Any other error is a bug and is not caught.
 - Each function takes the database client first (`db` or a transaction `tx`) and runs its writes in one transaction (nested calls become savepoints). All checks run before the first write.
+- Who acts next: `actorsFor()`/`canAct()` for one application, `waitingForWhere(user)` as the database filter for lists (For My Action, sidebar badge). The recommendation goes to the head of the applicant's office whatever their role (the HRMO and the mayor head offices too). Keep the two in sync; `verify:engine` scenario n checks it.
 - Day counts: `countLeaveDays()` in `src/lib/leave-types.ts` (calendar days for ML and SLBW, working days otherwise, holidays from the Holiday table). "Today" is `todayInManila()` from `src/lib/dates.ts`, never `new Date()` on its own.
 - `npm run verify:engine` runs `prisma/verify-engine.ts`: every rule scenario against the seeded data inside one transaction that is rolled back, printing PASS/FAIL per check (exit code 1 on any failure). Run it after changing any rule, and add a scenario for any new rule.
+
+## Screens
+
+- Pages live in `src/app/(app)/<route>/page.tsx` (signed-in, inside the app shell) and are server components. Client components only for forms, filters and dialogs, next to the page that uses them (e.g. `apply/apply-form.tsx`). Shared leave UI is in `src/components/leave/` (status badge, timeline, applications table); display formatting in `src/lib/format.ts` (dates shown in Asia/Manila).
+- **Prisma.Decimal and Date never cross to a client component.** The server page converts them first: Decimal -> number or string, Date -> "YYYY-MM-DD" (`fromDbDate`). Client components get plain data only, and never `passwordHash` or `signature`.
+- **Every page and every server action checks the role itself** (`requireRole(...rolesFor("/route"))` or `requireUser()` plus an explicit access check, as in `applications/[id]/page.tsx`). Server actions live in `src/server/*-actions.ts`, validate their input with zod, call `src/server/leave`, and return `LeaveError.message` as `{ error }`.
+- The UI may mirror a rule for a live hint (e.g. the day count and allowance warnings on File Leave), but the server decides.
+- List filters and paging go in the URL (`?q=&status=&type=&page=`) and are done in the database query.
 
 ## Panel revisions
 

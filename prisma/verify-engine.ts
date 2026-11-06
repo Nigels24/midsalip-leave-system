@@ -10,12 +10,15 @@ import { countLeaveDays } from "../src/lib/leave-types";
 import {
   actOn,
   balance,
+  canAct,
   cancelApplication,
   fileLeave,
   getLeaveOptions,
   LeaveError,
+  waitingForWhere,
   type FileLeaveInput,
 } from "../src/server/leave";
+import { OPEN_STATUSES } from "../src/lib/constants";
 
 type Tx = Prisma.TransactionClient;
 
@@ -194,6 +197,25 @@ async function scenarios(tx: Tx) {
   check("goes straight to FOR_CERTIFICATION", appL.status === "FOR_CERTIFICATION", appL.status);
   const filedL = await tx.approvalAction.findFirst({ where: { applicationId: appL.id, step: "FILED" } });
   check("FILED remark like the prototype", filedL?.remarks === "Filed by department head; routed directly to HRMO.", filedL?.remarks);
+
+  console.log("\nm) Commutation only for convertible types");
+  await rejects(
+    "SPL with commutation requested is rejected",
+    () => fileLeave(tx, { ...input(mdizon.id, "SPL", "2026-12-21", "2026-12-21", VACATION), commutation: "REQUESTED" }, mdizon.id),
+    "non-convertible",
+  );
+  const appM = await fileLeave(tx, { ...input(mdizon.id, "VL", "2026-12-21", "2026-12-22", VACATION), commutation: "REQUESTED" }, mdizon.id);
+  check("VL with commutation requested is accepted", appM.commutation === "REQUESTED");
+
+  console.log("\nn) For My Action list matches canAct");
+  const open = await tx.leaveApplication.findMany({ where: { status: { in: OPEN_STATUSES } } });
+  for (const person of [treasurer, hrmo, mayor, jpepito]) {
+    const listed = await tx.leaveApplication.findMany({ where: waitingForWhere(person), select: { id: true } });
+    const expected: string[] = [];
+    for (const app of open) if (await canAct(tx, app, person.id)) expected.push(app.id);
+    const same = listed.length === expected.length && listed.every((a) => expected.includes(a.id));
+    check(`${person.username}: ${listed.length} waiting, same as canAct`, same, `list ${listed.length}, canAct ${expected.length}`);
+  }
 }
 
 async function main() {

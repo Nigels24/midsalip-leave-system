@@ -107,6 +107,10 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
     if (input.commutation !== "NOT_REQUESTED" && input.commutation !== "REQUESTED") {
       throw new LeaveError("Please choose whether commutation is requested.");
     }
+    // Panel revision 4: only convertible types (VL, SL) can have commutation (cash conversion) requested.
+    if (input.commutation === "REQUESTED" && !type.convertible) {
+      throw new LeaveError(`${type.name} is non-convertible, so commutation cannot be requested.`);
+    }
 
     // 6. No overlap with the employee's own open or approved leave.
     const clash = await tx.leaveApplication.findFirst({

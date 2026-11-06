@@ -11,6 +11,11 @@ export function fullName(e: { firstName: string; middleInitial: string | null; l
   return `${e.firstName} ${e.middleInitial ? `${e.middleInitial}. ` : ""}${e.lastName}`;
 }
 
+/** "VILLAROSA, Ramon T." (Last, First Middle, as on CS Form 6 and in the prototype). */
+export function formName(e: { firstName: string; middleInitial: string | null; lastName: string }) {
+  return `${e.lastName.toUpperCase()}, ${e.firstName}${e.middleInitial ? ` ${e.middleInitial}.` : ""}`;
+}
+
 /**
  * Usernames are stored lowercase with no spaces (same as the prototype).
  * PostgreSQL compares text case-sensitively, so call this on every write AND every lookup,

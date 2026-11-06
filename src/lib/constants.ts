@@ -1,5 +1,5 @@
 // App-wide labels and fixed values.
-import type { ApplicationStatus, EmploymentStatus, Role } from "../generated/prisma/client";
+import type { ApplicationStatus, Commutation, EmploymentStatus, Role } from "../generated/prisma/client";
 
 export const APP = {
   name: "MMH Leave",
@@ -33,6 +33,11 @@ export const EMPLOYMENT_STATUS_LABELS: Record<EmploymentStatus, string> = {
 /** Statuses that still wait for someone's action. */
 export const OPEN_STATUSES: ApplicationStatus[] = ["FOR_RECOMMENDATION", "FOR_CERTIFICATION", "FOR_APPROVAL"];
 export const isOpen = (status: ApplicationStatus) => OPEN_STATUSES.includes(status);
+
+export const COMMUTATION_LABELS: Record<Commutation, string> = {
+  NOT_REQUESTED: "Not Requested",
+  REQUESTED: "Requested",
+};
 
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   FOR_RECOMMENDATION: "For Recommendation",
