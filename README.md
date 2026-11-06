@@ -56,6 +56,7 @@ The seed can be run again at any time. It never creates duplicate rows.
 | `npm run db:generate` | Regenerates the Prisma client after a schema change |
 | `npm run db:seed` | Loads offices, employees, leave types, holidays and opening leave credits |
 | `npm run db:reset` | **Deletes all data**, re-creates the tables and seeds again |
+| `npm run verify:engine` | Self-check of the leave rules against the seeded data (changes are rolled back; exit code 1 if any check fails) |
 
 ## Demo accounts
 
@@ -89,6 +90,8 @@ prisma.config.ts       Prisma settings (database URL, seed command)
 src/lib/               shared helpers: database client, session cookie, constants, leave types, dates, reference numbers
 src/config/            sidebar menu per role, demo account list
 src/proxy.ts           first login gate (Next.js 16 "proxy", formerly middleware)
-src/server/            server actions and services
+src/server/            server actions and services (auth, guards)
+src/server/leave/      leave rules: credits, eligibility, filing, approval workflow, cancel
+prisma/verify-engine.ts  self-check of the leave rules (npm run verify:engine)
 src/app/               pages
 ```

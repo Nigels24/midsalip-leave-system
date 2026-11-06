@@ -29,6 +29,7 @@
 // Every other type is non-convertible: unused days are simply lost at year end.
 // ────────────────────────────────────────────────────────────────────────────────
 import type { CreditKind, EmploymentStatus, LeaveDetailKind } from "../generated/prisma/client";
+import { calendarDaysBetween, workingDaysBetween } from "./dates";
 
 export interface LeaveTypeDef {
   code: string;
@@ -124,3 +125,37 @@ export const LEAVE_TYPES: LeaveTypeDef[] = [
     deductsFrom: null, detailKind: "NONE", convertible: false, maxDaysPerYear: "5", eligibleStatuses: WITH_ELECTIVE,
   },
 ];
+
+// ── Rules used when filing (src/server/leave) ───────────────────────────────────
+
+/** Counted in CALENDAR days by law (R.A. 11210, R.A. 9710). Every other type counts working days. */
+export const CALENDAR_DAY_TYPES = ["ML", "SLBW"];
+
+/** Sex-specific leave, checked against Employee.sex. */
+export const FEMALE_ONLY_TYPES = ["ML", "SLBW", "VAWC"];
+export const MALE_ONLY_TYPES = ["PL"];
+
+/**
+ * The number of days a leave uses: calendar days for ML and SLBW,
+ * otherwise working days (weekends and the given holidays are skipped).
+ */
+export function countLeaveDays(typeCode: string, start: string, end: string, holidays: Iterable<string>): number {
+  if (CALENDAR_DAY_TYPES.includes(typeCode)) return calendarDaysBetween(start, end);
+  return workingDaysBetween(start, end, holidays);
+}
+
+// "Details of Leave" (CS Form 6, item 6.B). The allowed choices, same as the prototype.
+export const LEAVE_LOCATIONS = ["Within the Philippines", "Abroad"];
+export const SICK_WHERE = ["In Hospital", "Out Patient"];
+export const STUDY_PURPOSES = ["Completion of Master's Degree", "BAR/Board Examination Review"];
+
+/** What is stored in LeaveApplication.details. Which fields are required depends on LeaveType.detailKind. */
+export interface LeaveDetails {
+  location?: string; // VACATION: one of LEAVE_LOCATIONS
+  locationSpec?: string; // VACATION: city or country
+  sickWhere?: string; // SICK: one of SICK_WHERE
+  illness?: string; // SICK
+  womenIllness?: string; // WOMEN
+  study?: string; // STUDY: one of STUDY_PURPOSES
+  others?: string; // any type: free remarks
+}

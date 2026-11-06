@@ -20,6 +20,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Login/logout:** server actions in `src/server/auth-actions.ts`. Every failure returns the same "Invalid username or password". A successful login writes an AuditLog `LOGIN` row.
 - Never add next-auth.
 
+## Leave rules
+
+- The business rules live in `src/server/leave/` (port of the prototype's `src/lib/engine.ts` plus the panel revisions): `credits.ts` (balance, pending, available), `eligibility.ts` (`getLeaveOptions`, `validateEligibility`), `filing.ts` (`fileLeave`), `workflow.ts` (`actorsFor`, `canAct`, `actOn`, `cancelApplication`), `errors.ts` (`LeaveError`), `shared.ts` (client type, transaction, notify, audit). Import from `src/server/leave`.
+- **Every** change to applications, approvals, credits, notifications or the audit trail for leave goes through these functions. Pages and server actions never write those tables directly; they check the role (`requireRole`), call the function, and show `LeaveError.message` to the user. Any other error is a bug and is not caught.
+- Each function takes the database client first (`db` or a transaction `tx`) and runs its writes in one transaction (nested calls become savepoints). All checks run before the first write.
+- Day counts: `countLeaveDays()` in `src/lib/leave-types.ts` (calendar days for ML and SLBW, working days otherwise, holidays from the Holiday table). "Today" is `todayInManila()` from `src/lib/dates.ts`, never `new Date()` on its own.
+- `npm run verify:engine` runs `prisma/verify-engine.ts`: every rule scenario against the seeded data inside one transaction that is rolled back, printing PASS/FAIL per check (exit code 1 on any failure). Run it after changing any rule, and add a scenario for any new rule.
+
 ## Panel revisions
 
 The capstone panel asked for these at the pre-oral defense. Every later step must implement them.

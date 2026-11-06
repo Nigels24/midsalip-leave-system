@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "db:reset": "prisma migrate reset && prisma db seed"
+    "db:reset": "prisma migrate reset && prisma db seed",
+    "verify:engine": "tsx prisma/verify-engine.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^7.0.3",

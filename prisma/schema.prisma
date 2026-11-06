@@ -145,7 +145,7 @@ model LeaveApplication {
   filedBy     Employee?         @relation("FiledBy", fields: [filedById], references: [id])
   typeCode    String
   leaveType   LeaveType         @relation(fields: [typeCode], references: [code])
-  // e.g. {location, locationSpec} | {sickWhere, illness} | {study} | {illness}
+  // e.g. {location, locationSpec} | {sickWhere, illness} | {study} | {womenIllness}, plus optional {others}
   details     Json
   startDate   DateTime          @db.Date
   endDate     DateTime          @db.Date
@@ -181,6 +181,9 @@ model ApprovalAction {
   actorId       String
   actor         Employee         @relation(fields: [actorId], references: [id])
   remarks       String           @default("") @db.Text
+  // Copy of the actor's Employee.signature at the moment of acting, so a later
+  // signature change never alters a document that was already signed.
+  signature     String?          @db.Text
   createdAt     DateTime         @default(now())
 
   @@index([applicationId])

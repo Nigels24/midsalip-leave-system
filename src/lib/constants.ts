@@ -30,6 +30,10 @@ export const EMPLOYMENT_STATUS_LABELS: Record<EmploymentStatus, string> = {
   COTERMINOUS: "Coterminous",
 };
 
+/** Statuses that still wait for someone's action. */
+export const OPEN_STATUSES: ApplicationStatus[] = ["FOR_RECOMMENDATION", "FOR_CERTIFICATION", "FOR_APPROVAL"];
+export const isOpen = (status: ApplicationStatus) => OPEN_STATUSES.includes(status);
+
 export const STATUS_LABELS: Record<ApplicationStatus, string> = {
   FOR_RECOMMENDATION: "For Recommendation",
   FOR_CERTIFICATION: "For Certification",
