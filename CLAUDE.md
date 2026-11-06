@@ -2,8 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-@AGENTS.md
-
 ## Ground rules
 
 - **The developer runs all commands that install, migrate, seed, build, or touch git.** Write the files, then list the exact commands to run. Don't run `npm install`, `npx shadcn add`, `prisma migrate`/`db seed`/`reset`, or `git init`/`commit`/`push`/`pull` yourself.
@@ -12,6 +10,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - This system must reproduce the behavior of the localStorage prototype in `../midsalip-system-prototype` (business rules are in its `src/lib/engine.ts`), changed only where the panel revisions below say so.
 - Local database: PostgreSQL 16 in Docker, on port 5433:
   `docker run -d --name midsalip-postgres -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=midsalip_leave -p 5433:5432 postgres:16-alpine`
+
+## Auth
+
+- **Session:** `src/lib/session.ts`. A signed cookie `mmh-session` (JWT, HS256, `jose`) that holds only the employee id. HttpOnly, SameSite=Lax, Secure in production, expires after 8 hours. `SESSION_SECRET` (32+ characters) signs it.
+- **Current user:** `getCurrentUser()` in `src/server/auth.ts` verifies the cookie and loads the employee and office from the database on every request (wrapped in React `cache`, so once per request). A deactivated or deleted account is treated as signed out immediately. It never loads `passwordHash` (or `signature`).
+- **Guards:** `requireUser()` redirects to `/login`; `requireRole(...roles)` redirects a wrong role to `/dashboard`. Page roles come from `src/config/nav.ts` via `rolesFor("/path")`, so the sidebar and the page guard always agree.
+- **Rule:** every protected page AND every server action calls `requireUser()` or `requireRole()` itself. `src/proxy.ts` (Next 16's name for middleware) only checks that the cookie is validly signed and redirects to `/login`. It is a first gate, not the authorization. `/login`, `/verify` and `/verify/*` are public.
+- **Login/logout:** server actions in `src/server/auth-actions.ts`. Every failure returns the same "Invalid username or password". A successful login writes an AuditLog `LOGIN` row.
+- Never add next-auth.
 
 ## Panel revisions
 

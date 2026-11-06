@@ -5,6 +5,10 @@ export const APP = {
   name: "MMH Leave",
   subtitle: "Employee Leave Management System",
   issuer: "Municipal Government of Midsalip, Province of Zamboanga del Sur",
+  agency: "Municipal Government of Midsalip",
+  province: "Province of Zamboanga del Sur",
+  office: "Human Resource Management Office",
+  footer: "Web-Based Employee Leave Management System with QR Code Integration",
 };
 
 /** VL and SL each earn this many days per month of service (CSC rule). */

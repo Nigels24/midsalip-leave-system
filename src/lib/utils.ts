@@ -6,6 +6,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** "Ramon T. Villarosa" (same format as the prototype). */
+export function fullName(e: { firstName: string; middleInitial: string | null; lastName: string }) {
+  return `${e.firstName} ${e.middleInitial ? `${e.middleInitial}. ` : ""}${e.lastName}`;
+}
+
 /**
  * Usernames are stored lowercase with no spaces (same as the prototype).
  * PostgreSQL compares text case-sensitively, so call this on every write AND every lookup,

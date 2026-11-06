@@ -59,7 +59,7 @@ The seed can be run again at any time. It never creates duplicate rows.
 
 ## Demo accounts
 
-All demo accounts use the password **`demo123`**.
+All demo accounts use the password **`demo123`**. The login page lists them when `SHOW_DEMO_ACCOUNTS="true"` is in `.env`; set it to `"false"` on the real server.
 
 | Username | Role |
 |---|---|
@@ -86,7 +86,9 @@ All demo accounts use the password **`demo123`**.
 prisma/schema.prisma   database tables
 prisma/seed.ts         demo data
 prisma.config.ts       Prisma settings (database URL, seed command)
-src/lib/               shared helpers: database client, constants, leave types, dates, reference numbers
+src/lib/               shared helpers: database client, session cookie, constants, leave types, dates, reference numbers
+src/config/            sidebar menu per role, demo account list
+src/proxy.ts           first login gate (Next.js 16 "proxy", formerly middleware)
 src/server/            server actions and services
 src/app/               pages
 ```
