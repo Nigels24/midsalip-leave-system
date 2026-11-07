@@ -21,3 +21,6 @@
 npm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
+
+# database backups (npm run db:backup): personal data, never commit
+/backups/

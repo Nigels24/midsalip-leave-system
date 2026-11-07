@@ -41,6 +41,19 @@ export async function verifyToken(token: string | undefined): Promise<string | n
   }
 }
 
+/**
+ * Should the cookie be "Secure" (sent over HTTPS only)? A browser never sends a Secure cookie
+ * over plain http://192.168.x.x:3000, so on the municipal LAN it must be off or nobody stays logged in.
+ *   COOKIE_SECURE="true" / "false" in .env decides it when set;
+ *   otherwise it is on only when APP_URL starts with https:// (e.g. on Render).
+ */
+export function cookieSecure() {
+  const setting = process.env.COOKIE_SECURE?.trim().toLowerCase();
+  if (setting === "true") return true;
+  if (setting === "false") return false;
+  return (process.env.APP_URL ?? "").trim().toLowerCase().startsWith("https://");
+}
+
 /** Signs the employee in: writes the session cookie. Call only from a server action. */
 export async function createSession(employeeId: string) {
   const token = await signToken(employeeId);
@@ -48,7 +61,7 @@ export async function createSession(employeeId: string) {
   cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true, // JavaScript in the browser cannot read it
     sameSite: "lax", // not sent on form posts from other sites
-    secure: process.env.NODE_ENV === "production", // HTTPS only in production (the LAN dev server is plain HTTP)
+    secure: cookieSecure(), // HTTPS-only cookie when the site runs on HTTPS (see below)
     path: "/",
     maxAge: SESSION_HOURS * 60 * 60, // seconds
   });

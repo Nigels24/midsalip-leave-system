@@ -2,16 +2,27 @@
   "name": "midsalip-leave-system",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
-    "start": "next start -H 0.0.0.0 -p 3000",
+    "start": "next start -p 3000",
+    "start:lan": "next start -H 0.0.0.0 -p 3000",
     "lint": "eslint",
+    "setup": "node scripts/setup.mjs",
+    "setup:env": "node scripts/setup-env.mjs",
+    "db:wait": "node scripts/wait-for-db.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:seed:production": "tsx prisma/seed-production.ts",
     "db:reset": "prisma migrate reset && prisma db seed",
+    "db:backup": "node scripts/backup.mjs",
+    "db:restore": "node scripts/restore.mjs",
     "verify:engine": "tsx prisma/verify-engine.ts"
   },
   "dependencies": {

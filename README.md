@@ -1,97 +1,210 @@
-# MMH Leave — Employee Leave Management System
+# MMH Leave: Employee Leave Management System
 
-Web-Based Employee Leave Management System with QR Code Integration for Midsalip Municipal Hall
-(Municipal Government of Midsalip, Province of Zamboanga del Sur).
+**Web-Based Employee Leave Management System with QR Code Integration** for the
+Municipal Government of Midsalip, Province of Zamboanga del Sur.
 
-Stack: Next.js (App Router, TypeScript) · Prisma ORM · PostgreSQL 16 · Tailwind CSS · shadcn/ui · QR code generation.
-Runs on a Windows PC over the municipal LAN, or online on Render with a Neon PostgreSQL database.
+MMH Leave replaces paper leave forms. Employees file leave online. The department head recommends it,
+the HRMO certifies the leave credits, and the Municipal Mayor approves it. The approved
+CS Form No. 6 prints with everyone's e-signature and a QR code that anyone can scan with a phone to
+check that the document is real.
 
-## Prerequisites
+The system runs on one computer (the "server laptop") at the municipal hall. Other computers and phones
+on the same Wi-Fi open it in their web browser. No internet connection is needed after installation.
 
-- **Node.js** LTS (20.19 or newer)
-- **PostgreSQL 16** running in **Docker** (see step 4). A native PostgreSQL 16 install also works.
-  In production, a **Neon** database works too.
+---
 
-## Setup
+## 1. Install these first (one time)
 
-```bash
-# 1. Install dependencies
-npm install
+Install them on the server laptop, in this order. Accept the default options.
 
-# 2. Add the shadcn/ui components
-npx shadcn@latest add button input label card table badge dialog select textarea sonner
+| Program | Where to get it | Notes |
+|---|---|---|
+| **Node.js** (LTS version, 22 or newer) | https://nodejs.org/en/download | Choose the **LTS** installer. |
+| **Git** | https://git-scm.com/downloads | Used to download and update the system. |
+| **Docker Desktop** | https://www.docker.com/products/docker-desktop/ | Runs the database. Restart the computer if asked. Open it once and wait until it says *Engine running*. |
 
-# 3. Configure the environment
-cp .env.example .env          # Windows: copy .env.example .env
-#    then edit DATABASE_URL (user, password, database) and SESSION_SECRET
+To check, open a terminal and type the commands below. Each should print a version number.
+On Windows, use **Command Prompt** or **PowerShell**; on a Mac, use **Terminal**.
 
-# 4. Start PostgreSQL 16 with the database "midsalip_leave" already created.
-#    With Docker (matches the DATABASE_URL in .env.example):
-#    The database listens on port 5433 on this PC, so it does not clash with another PostgreSQL on 5432.
-docker run -d --name midsalip-postgres -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=midsalip_leave \
-  -p 5433:5432 -v midsalip-pgdata:/var/lib/postgresql/data postgres:16-alpine
-#    Later: docker start midsalip-postgres
-#    With a native install instead, run in psql:  CREATE DATABASE midsalip_leave;
-
-# 5. Create the tables, generate the Prisma client, load the demo data
-npm run db:migrate -- --name init
-npm run db:generate
-npm run db:seed
-
-# 6. Run
-npm run dev                   # http://localhost:3000
+```
+node -v
+git --version
+docker --version
 ```
 
-The seed can be run again at any time. It never creates duplicate rows.
+## 2. Get the system and set it up (one time)
 
-## Scripts
+1. Open a terminal and go to the folder where the system should live, for example your Documents:
+   ```
+   cd Documents
+   ```
+2. Download the system (ask the developer for the repository address):
+   ```
+   git clone <repository-address> midsalip-leave-system
+   cd midsalip-leave-system
+   ```
+3. Make sure **Docker Desktop is open**, then start the database:
+   ```
+   docker compose up -d
+   ```
+4. Set everything up. This installs the parts, creates the settings file `.env`, creates the tables
+   and the starting data. It takes a few minutes the first time:
+   ```
+   npm run setup
+   ```
+   At the end it prints the **first password** of the two starter accounts (`hrmo` and `mayor`).
+   **Write it down.**
+5. Prepare the system for daily use:
+   ```
+   npm run build
+   ```
+
+You can run `npm run setup` again at any time. It never deletes data and never resets a password.
+
+## 3. Start the system every day
+
+1. Open **Docker Desktop** (the database starts with it).
+2. Open a terminal in the system folder and run:
+   ```
+   cd Documents/midsalip-leave-system
+   npm run start:lan
+   ```
+3. Leave that window open while people use the system. To stop it, click the window and press **Ctrl+C**.
+
+## 4. Open the system
+
+- **On the server laptop:** open a browser and go to **http://localhost:3000**
+- **From other computers and phones on the same Wi-Fi:** use the server laptop's address, for example
+  **http://192.168.1.10:3000**. To find it:
+  - Windows: open Command Prompt, type `ipconfig`, and look for **IPv4 Address** under your Wi-Fi adapter.
+  - Mac: System Settings → Wi-Fi → **Details…** → IP address (or type `ipconfig getifaddr en0` in Terminal).
+- **Windows firewall:** the first time you run `npm run start:lan`, Windows may ask whether to allow
+  **Node.js** on networks. Tick **Private networks** and click **Allow**. Make sure the municipal Wi-Fi
+  is set as a *Private* network (Settings → Network & Internet → Wi-Fi → your network).
+- **Tip:** on the server laptop, open the system using its IP address too (not `localhost`), so the
+  QR codes printed from it point to an address that phones can open.
+- The address may change when the router restarts. Ask your IT person to give the server laptop a fixed
+  (reserved) IP address in the router.
+
+## 5. First login: what to do first
+
+1. Sign in as **`hrmo`** with the first password from step 2.4.
+2. Go to **My Profile** and **change the password**. Do the same for **`mayor`** (sign in as `mayor`).
+   Then open the `.env` file in the system folder with Notepad and delete the line that starts with
+   `SEED_ADMIN_PASSWORD`.
+3. Go to **Employees & Accounts**:
+   - Open the two starter accounts ("Starter HRMO" and "Starter Mayor") and enter the **real names**,
+     sex, position, salary grade and date of appointment.
+   - **Add every employee** (Add employee). Give each one a temporary password; they can change it on
+     My Profile. Enter their opening VL and SL balances from the paper leave card.
+   - In **Office heads**, set the **head of each office**. Employees of an office without a head cannot
+     file leave yet.
+4. Ask each signee (department heads, HRMO, mayor) to set their **e-signature** on **My Profile**.
+5. **Every month**, the HRMO posts the leave credits: **Employees & Accounts → Post monthly credits**,
+   choose the month, check the list, and confirm. Posting the same month twice adds nothing.
+
+## 6. Back up and restore
+
+**Back up at least once a week** and copy the `backups` folder to a USB drive or another computer.
+
+- **Back up** (the database must be running):
+  ```
+  npm run db:backup
+  ```
+  This creates a file like `backups/midsalip-leave-2026-11-07_08-30-00.sql`.
+- **Restore** a backup. **This replaces all current data.** First stop the system (Ctrl+C), then:
+  ```
+  npm run db:restore
+  ```
+  Choose the backup from the list and type `RESTORE` to confirm. Then start the system again.
+
+## 7. Update to a newer version
+
+1. Stop the system (Ctrl+C) and make a backup: `npm run db:backup`
+2. Download the update and apply it:
+   ```
+   git pull
+   npm run setup
+   npm run build
+   ```
+3. Start it again: `npm run start:lan`
+
+## 8. Troubleshooting
+
+| Problem | What to do |
+|---|---|
+| `docker compose up -d` says *cannot connect to the Docker daemon* | Docker Desktop is not running. Open it, wait for *Engine running*, and try again. |
+| `npm run setup` says *The database did not answer* | Same as above, then run `docker compose up -d` and `npm run setup` again. |
+| *Port 5433 is already allocated* (database) | Another program uses that port. In `.env`, add `POSTGRES_PORT="5434"` and change `5433` to `5434` inside `DATABASE_URL`. Then run `docker compose up -d` again. |
+| *Port 3000 is already in use* (system) | The system is probably already running in another window. Close it, or restart the computer. |
+| Other computers cannot open the system | Check that both are on the same Wi-Fi, use the IP address (not localhost), and allow Node.js in the Windows firewall (section 4). |
+| Logged in but sent back to the login page | Make sure `.env` does not contain `COOKIE_SECURE="true"` (only for HTTPS servers). |
+| An employee **forgot their password** | The HRMO opens **Employees & Accounts**, clicks the employee, types a new temporary password under **Reset password**, and tells the employee. The employee changes it on My Profile. |
+| The **HRMO forgot their password** | The mayor cannot reset it. If there is a second HRMO account, it can reset it. Otherwise call the developer. |
+| *Error connecting to the database* in the browser | Docker Desktop or the database is not running: open Docker Desktop, run `docker compose up -d`, then start the system again. |
+| An employee cannot file leave: *has no department head yet* | The HRMO sets the head of that office in **Employees & Accounts → Office heads**. |
+
+---
+
+## For the developer
+
+**Stack:** Next.js 16 (App Router, TypeScript), Prisma 7 with `@prisma/adapter-pg`, PostgreSQL 16 (Docker),
+Tailwind CSS 4, shadcn/ui, `qrcode`, custom session (`jose` + `bcryptjs`, no next-auth), zod.
+Read **CLAUDE.md** for the rules of the codebase. The full browser test plan is **docs/TEST-CHECKLIST.md**.
+
+**Development with demo data** (password `demo123` for every demo account):
+
+```
+docker compose up -d
+npm install
+npm run setup:env        # then in .env: SHOW_DEMO_ACCOUNTS="true"
+npm run db:deploy        # create the tables
+npm run db:generate
+npm run db:seed          # 16 demo employees, credits, signatures (NOT the production seed)
+npm run dev              # http://localhost:3000
+```
+
+Use either the demo seed or the production seed on a database, never both: both create the
+usernames `hrmo` and `mayor` (with different employee numbers), so the demo seed stops with a
+"unique constraint" error on a production database and changes nothing there.
+`npm run db:reset` deletes everything and loads only the demo data.
+
+**Folders**
+
+```
+prisma/schema.prisma        database tables            prisma/migrations/   schema history
+prisma/seed.ts              demo data (dev)            prisma/seed-production.ts  real install start data
+prisma/seed-data.ts         offices, holidays, leave types shared by both seeds
+prisma/verify-engine.ts     self-check of the rules (npm run verify:engine)
+scripts/                    setup, wait-for-db, backup, restore (plain Node, work on Windows)
+src/app/                    pages ((app) = signed in, verify = public QR pages)
+src/server/                 server actions, auth guards, reports, employee rules
+src/server/leave/           leave rules: filing, eligibility, credits, workflow, accrual
+src/lib/                    shared helpers (db client, session, dates, formatting, csv, calendar)
+src/config/nav.ts           sidebar menu and the roles allowed on each page
+docker-compose.yml          PostgreSQL 16 for local use
+```
+
+**npm scripts**
 
 | Script | What it does |
 |---|---|
-| `npm run dev` | Development server |
-| `npm run build` | Generates the Prisma client, then builds for production |
-| `npm start` | Production server on port 3000, reachable from the LAN (`http://<pc-ip>:3000`) |
-| `npm run lint` | ESLint |
-| `npm run db:migrate` | Applies schema changes to the database (`prisma migrate dev`) |
-| `npm run db:generate` | Regenerates the Prisma client after a schema change |
-| `npm run db:seed` | Loads offices, employees, leave types, holidays and opening leave credits |
-| `npm run db:reset` | **Deletes all data**, re-creates the tables and seeds again |
-| `npm run verify:engine` | Self-check of the leave rules against the seeded data (changes are rolled back; exit code 1 if any check fails) |
+| `setup` | Install (if needed), create `.env`, wait for the DB, generate client, `migrate deploy`, production seed |
+| `setup:env` | Create `.env` from `.env.example` with random secrets (never overwrites) |
+| `dev` | Development server |
+| `build` | Generate the Prisma client and build for production |
+| `start` | Production server on port 3000 |
+| `start:lan` | Production server on port 3000, reachable from the LAN (`-H 0.0.0.0`) |
+| `lint` | ESLint |
+| `db:wait` | Wait until PostgreSQL accepts connections |
+| `db:generate` | Regenerate the Prisma client |
+| `db:migrate` | Create/apply a migration in development (`prisma migrate dev`) |
+| `db:deploy` | Apply migrations without prompts (`prisma migrate deploy`), as used by setup |
+| `db:seed` | Demo seed (development only) |
+| `db:seed:production` | Production seed (offices, leave types, holidays, starter accounts) |
+| `db:reset` | **Deletes all data**, re-creates the tables and loads the demo seed |
+| `db:backup` / `db:restore` | Backup to / restore from `backups/*.sql` through `docker exec` |
+| `verify:engine` | Self-check of the leave rules on the demo data (rolled back; exit code 1 on failure) |
 
-## Demo accounts
-
-All demo accounts use the password **`demo123`**. The login page lists them when `SHOW_DEMO_ACCOUNTS="true"` is in `.env`; set it to `"false"` on the real server.
-
-| Username | Role |
-|---|---|
-| `mayor` | Approving Authority |
-| `hrmo` | HRMO (system administrator) |
-| `treasurer` | Department Head (Treasurer's Office) |
-| `accountant` | Department Head (Accountant's Office) |
-| `engineer` | Department Head (Engineering Office) |
-| `mswdo` | Department Head (MSWDO) |
-| `mho` | Department Head (Health Office) |
-| `jpepito` | Employee (HRMO) |
-| `mdizon` | Employee (Treasurer's Office) |
-| `klumbay` | Employee (Accountant's Office) |
-| `rtampus` | Employee (Engineering Office) |
-| `abacus` | Employee (MSWDO) |
-| `lcabahug` | Employee (Health Office) |
-| `jomandam` | Employee (Health Office) |
-| `cgalarrita` | Employee (Mayor's Office) |
-| `psumalpong` | Employee (Engineering Office, casual) |
-
-## Project layout
-
-```
-prisma/schema.prisma   database tables
-prisma/seed.ts         demo data
-prisma.config.ts       Prisma settings (database URL, seed command)
-src/lib/               shared helpers: database client, session cookie, constants, leave types, dates, reference numbers
-src/config/            sidebar menu per role, demo account list
-src/proxy.ts           first login gate (Next.js 16 "proxy", formerly middleware)
-src/server/            server actions and services (auth, guards)
-src/server/leave/      leave rules: credits, eligibility, filing, approval workflow, cancel
-prisma/verify-engine.ts  self-check of the leave rules (npm run verify:engine)
-src/app/               pages
-```
+**Settings (.env)**: see `.env.example`. `COOKIE_SECURE` controls the HTTPS-only cookie (off by default
+unless `APP_URL` starts with `https://`). On Render, set `APP_URL` to the https address.

@@ -7,25 +7,27 @@ import { format } from "date-fns";
 import { Prisma, type EmploymentStatus, type Role, type Sex } from "../src/generated/prisma/client";
 import { db } from "../src/lib/db";
 import { MONTHLY_ACCRUAL } from "../src/lib/constants";
-import { CREDIT_EARNING_STATUSES, LEAVE_TYPES } from "../src/lib/leave-types";
+import { CREDIT_EARNING_STATUSES } from "../src/lib/leave-types";
 import { DEMO_PASSWORD } from "../src/config/demo-accounts";
 import { toDbDate } from "../src/lib/dates";
 import { normalizeUsername } from "../src/lib/utils";
+import { OFFICES as BASE_OFFICES, seedHolidays, seedLeaveTypes } from "./seed-data";
 
 const OPENING_DATE = "2025-12-31";
 const OPENING_PARTICULARS = "Balance forwarded (leave card)";
 const ACCRUAL_MONTHS = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"];
 
-// ── Offices: [id, name, head username] ───────────────────────
-const OFFICES: [id: string, name: string, headUsername: string][] = [
-  ["MO", "Office of the Municipal Mayor", "mayor"],
-  ["HRMO", "Human Resource Management Office", "hrmo"],
-  ["MTO", "Office of the Municipal Treasurer", "treasurer"],
-  ["MACCO", "Office of the Municipal Accountant", "accountant"],
-  ["MEO", "Office of the Municipal Engineer", "engineer"],
-  ["MSWDO", "Municipal Social Welfare and Development Office", "mswdo"],
-  ["MHO", "Municipal Health Office", "mho"],
-];
+// ── Offices (shared list in prisma/seed-data.ts) with their demo head ─
+const OFFICE_HEADS: Record<string, string> = {
+  MO: "mayor",
+  HRMO: "hrmo",
+  MTO: "treasurer",
+  MACCO: "accountant",
+  MEO: "engineer",
+  MSWDO: "mswdo",
+  MHO: "mho",
+};
+const OFFICES = BASE_OFFICES.map(([id, name]) => [id, name, OFFICE_HEADS[id]] as [id: string, name: string, headUsername: string]);
 
 // ── Employees ────────────────────────────────────────────────
 // Money and credit values are strings so they go into Decimal columns exactly.
@@ -66,31 +68,31 @@ const EMPLOYEES: EmployeeRow[] = [
   ["2024-011", "Paolo", "E", "Sumalpong", "MALE", "Utility Worker I", 1, "14000", "MEO", "CASUAL", "2024-01-15", "EMPLOYEE", "psumalpong", "2.5", "3"],
 ];
 
-// ── Holidays 2026 ────────────────────────────────────────────
-const HOLIDAYS: [date: string, name: string][] = [
-  ["2026-01-01", "New Year's Day"],
-  ["2026-04-02", "Maundy Thursday"],
-  ["2026-04-03", "Good Friday"],
-  ["2026-04-09", "Araw ng Kagitingan"],
-  ["2026-05-01", "Labor Day"],
-  ["2026-06-12", "Independence Day"],
-  ["2026-08-21", "Ninoy Aquino Day"],
-  ["2026-08-31", "National Heroes Day"],
-  ["2026-11-01", "All Saints' Day"],
-  ["2026-11-02", "All Souls' Day"],
-  ["2026-11-30", "Bonifacio Day"],
-  ["2026-12-08", "Feast of the Immaculate Conception"],
-  ["2026-12-24", "Christmas Eve"],
-  ["2026-12-25", "Christmas Day"],
-  ["2026-12-30", "Rizal Day"],
-  ["2026-12-31", "Last Day of the Year"],
-];
-
 /** "2026-02" -> "2026-02-28" */
 function lastDayOfMonth(month: string) {
   const [year, m] = month.split("-").map(Number);
   // Day 0 of the next month is the last day of this month.
   return new Date(Date.UTC(year, m, 0)).toISOString().slice(0, 10);
+}
+
+// ── Demo e-signatures ────────────────────────────────────────
+// Office heads, the HRMO, the mayor and a few employees get a generated signature so the
+// approval chain shows signatures right away. Users can replace it on My Profile.
+const SIGNATURE_USERNAMES = [...OFFICES.map(([, , head]) => head), "jpepito", "mdizon", "psumalpong", "klumbay"];
+
+/**
+ * The person's name in a handwriting-style font, as an SVG data URL.
+ * SVG is allowed ONLY here, because the seed writes the SVG text itself;
+ * uploads accept PNG/JPG only (src/lib/signature.ts).
+ */
+function demoSignature(firstName: string, lastName: string) {
+  const name = `${firstName[0]}. ${lastName}`.replace(/[<>&"']/g, ""); // keep the SVG text plain
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120" viewBox="0 0 400 120">` +
+    `<text x="20" y="78" font-family="'Brush Script MT','Segoe Script','Lucida Handwriting',cursive" ` +
+    `font-size="46" font-style="italic" fill="#1e3a8a">${name}</text>` +
+    `<path d="M20 92 C 120 84, 240 100, 360 88" stroke="#1e3a8a" stroke-width="2" fill="none"/></svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
 /** "2026-01" -> "January 2026" */
@@ -135,25 +137,10 @@ async function main() {
   }
 
   // 4. Leave types (defaults explained at the top of src/lib/leave-types.ts).
-  for (const [index, t] of LEAVE_TYPES.entries()) {
-    const data = {
-      name: t.name,
-      legalBasis: t.legalBasis,
-      ruleNote: t.ruleNote,
-      deductsFrom: t.deductsFrom,
-      detailKind: t.detailKind,
-      convertible: t.convertible,
-      maxDaysPerYear: t.maxDaysPerYear,
-      eligibleStatuses: t.eligibleStatuses,
-      sortOrder: index + 1,
-    };
-    await db.leaveType.upsert({ where: { code: t.code }, update: data, create: { code: t.code, ...data } });
-  }
+  await seedLeaveTypes(db);
 
   // 5. Holidays.
-  for (const [date, name] of HOLIDAYS) {
-    await db.holiday.upsert({ where: { date: toDbDate(date) }, update: { name }, create: { date: toDbDate(date), name } });
-  }
+  await seedHolidays(db);
 
   // 6. Opening balances from the paper leave cards.
   for (const row of EMPLOYEES) {
@@ -198,7 +185,16 @@ async function main() {
     }
   }
 
-  // 8. Settings.
+  // 8. Demo e-signatures, only where the account has none: a signature the user set is never overwritten.
+  for (const username of SIGNATURE_USERNAMES) {
+    const person = await db.employee.findUniqueOrThrow({ where: { username: normalizeUsername(username) } });
+    await db.employee.updateMany({
+      where: { id: person.id, signature: null },
+      data: { signature: demoSignature(person.firstName, person.lastName), signatureUpdatedAt: new Date() },
+    });
+  }
+
+  // 9. Settings.
   const lastMonth = ACCRUAL_MONTHS[ACCRUAL_MONTHS.length - 1];
   await db.appSetting.upsert({
     where: { key: "lastAccrualMonth" },
@@ -221,12 +217,14 @@ async function printSummary(earnerCount: number) {
     db.leaveApplication.count(),
     db.leaveApplication.count({ where: { filedById: null } }),
   ]);
+  const withSignature = await db.employee.count({ where: { signature: { not: null } } });
 
   console.log("\nSeed complete:");
   console.log(`  offices      ${offices} (with head: ${officesWithHead})`);
   console.log(`  employees    ${employees}`);
   console.log(`  leave types  ${leaveTypes}`);
   console.log(`  holidays     ${holidays}`);
+  console.log(`  signatures   ${withSignature} employees have an e-signature`);
   console.log(`  ledger       ${openingRows} opening rows, ${accrualRows} accrual rows (expected ${earnerCount * ACCRUAL_MONTHS.length * 2})`);
   // Every application must record who encoded it (the employee, or an HRMO on their behalf).
   console.log(`  applications ${applications} (without filedBy: ${noFiler})`);

@@ -99,10 +99,18 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
     }
     const days = new Prisma.Decimal(dayCount);
 
-    // 4. Employment type, sex, yearly allowance and credits. The allowance year is the year the leave starts.
+    // 4. An office without a head (e.g. a fresh install) has nobody to recommend: the application
+    //    would wait forever, so it is refused until the HRMO sets the head on Employees & Accounts.
+    //    Checked before the credits, so the employee is told the real reason.
+    //    (A department head's own leave skips recommendation, but then the office has a head: him.)
+    if (!employee.office.headId) {
+      throw new LeaveError(`The ${employee.office.name} has no department head yet, so nobody can recommend this leave. Ask the HRMO to set the office head first.`);
+    }
+
+    // 5. Employment type, sex, yearly allowance and credits. The allowance year is the year the leave starts.
     await validateEligibility(tx, employee, type, days, yearOf(startDate));
 
-    // 5. Details of leave, commutation.
+    // 6. Details of leave, commutation.
     const details = cleanDetails(type.detailKind, input.details ?? {});
     if (input.commutation !== "NOT_REQUESTED" && input.commutation !== "REQUESTED") {
       throw new LeaveError("Please choose whether commutation is requested.");
@@ -112,7 +120,7 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
       throw new LeaveError(`${type.name} is non-convertible, so commutation cannot be requested.`);
     }
 
-    // 6. No overlap with the employee's own open or approved leave.
+    // 7. No overlap with the employee's own open or approved leave.
     const clash = await tx.leaveApplication.findFirst({
       where: {
         employeeId: employee.id,
@@ -127,7 +135,7 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
       );
     }
 
-    // 7. Routing: a department head has no one above him in the office, so his leave skips recommendation.
+    // 8. Routing: a department head has no one above him in the office, so his leave skips recommendation.
     const selfHead = employee.office.headId === employee.id;
     const status = selfHead ? "FOR_CERTIFICATION" : "FOR_RECOMMENDATION";
     const remarks = [
@@ -137,7 +145,7 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
       .filter(Boolean)
       .join(" ");
 
-    // 8. Save the application with its FILED step.
+    // 9. Save the application with its FILED step.
     const app = await tx.leaveApplication.create({
       data: {
         refNo: await newRefNo(tx),
@@ -154,7 +162,7 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
       },
     });
 
-    // 9. Notifications and audit trail (same texts as the prototype).
+    // 10. Notifications and audit trail (same texts as the prototype).
     const byLine = onBehalf ? ` It was filed on your behalf by ${fullName(actor)}.` : "";
     await notify(
       tx,

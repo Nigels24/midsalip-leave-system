@@ -5,3 +5,4 @@ export { balance, pendingDays, credits, type Credits } from "./credits";
 export { getLeaveOptions, validateEligibility, type LeaveOption } from "./eligibility";
 export { fileLeave, loadHolidays, type FileLeaveInput } from "./filing";
 export { actorsFor, canAct, actOn, cancelApplication, waitingForWhere, type Decision } from "./workflow";
+export { accrualPreview, postAccrual } from "./accrual";

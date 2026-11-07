@@ -4,10 +4,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { ArrowLeft, CheckCircle2 } from "lucide-react";
-import type { CurrentUser } from "@/server/auth";
+import { ArrowLeft, CheckCircle2, FileText, QrCode } from "lucide-react";
 import { Timeline } from "@/components/leave/timeline";
 import { StatusBadge } from "@/components/leave/status-badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { COMMUTATION_LABELS, isOpen, OPEN_STATUSES } from "@/lib/constants";
 import { db } from "@/lib/db";
@@ -15,8 +15,10 @@ import { todayInManila } from "@/lib/dates";
 import { fmtDate, fmtDateTime, fmtNum, fmtRange } from "@/lib/format";
 import { CALENDAR_DAY_TYPES, type LeaveDetails } from "@/lib/leave-types";
 import { fullName } from "@/lib/utils";
+import { canViewApplication } from "@/server/application-access";
 import { requireUser } from "@/server/auth";
 import { balance, canAct, credits } from "@/server/leave";
+import { verifyQr } from "@/server/qr";
 import { ActionPanel } from "./action-panel";
 import { CancelApplicationButton } from "./cancel-button";
 
@@ -35,13 +37,6 @@ async function loadApplication(id: string) {
 }
 type LoadedApplication = NonNullable<Awaited<ReturnType<typeof loadApplication>>>;
 
-/** Same access rule as the prototype, except a department head is matched by the office he heads. */
-function canView(user: CurrentUser, app: LoadedApplication) {
-  if (app.employeeId === user.id) return true;
-  if (user.role === "HRMO" || user.role === "APPROVER") return true;
-  return user.role === "DEPT_HEAD" && app.employee.office.headId === user.id;
-}
-
 export default async function ApplicationPage({
   params,
   searchParams,
@@ -56,7 +51,7 @@ export default async function ApplicationPage({
 
   const app = await loadApplication(id);
   if (!app) notFound();
-  if (!canView(user, app)) {
+  if (!canViewApplication(user, app)) {
     return (
       <Card className="mx-auto max-w-md text-center">
         <CardHeader>
@@ -83,6 +78,8 @@ export default async function ApplicationPage({
   // May this user act on the current step? Same routing rule the server uses in actOn().
   const mayAct = isOpen(app.status) && (await canAct(db, app, user.id));
   const panel = mayAct ? await actionPanelInfo(app) : null;
+  // Panel revisions 7 and 8: an approved application has a printable form and a public QR code.
+  const qr = app.status === "APPROVED" ? await verifyQr(app.refNo) : null;
 
   return (
     <>
@@ -109,7 +106,13 @@ export default async function ApplicationPage({
           {isApplicant && isOpen(app.status) && (
             <CancelApplicationButton applicationId={app.id} summary={`${t.name} · ${fmtRange(app.startDate, app.endDate)}`} />
           )}
-          {/* NEXT STEP: "Print / Preview CS Form No. 6" button goes here. */}
+          {qr && (
+            <Button asChild size="sm">
+              <Link href={`/applications/${app.id}/form`}>
+                <FileText size={14} /> Form 6
+              </Link>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -198,7 +201,28 @@ export default async function ApplicationPage({
             </CardContent>
           </Card>
 
-          {/* NEXT STEP: verification QR code card (approved applications) goes here. */}
+          {qr && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <QrCode size={18} /> Verification QR code
+                </CardTitle>
+                <CardDescription>Anyone can scan it, without logging in, to check that this leave is authentic.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-center">
+                {/* A data URL made on the server, so next/image optimization does not apply. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qr.dataUrl} alt={`QR code for ${app.refNo}`} width={160} height={160} className="mx-auto" />
+                <p className="font-mono text-sm font-bold text-slate-800">{app.refNo}</p>
+                <p className="break-all text-xs text-slate-500">{qr.url}</p>
+                <Button asChild className="w-full">
+                  <Link href={`/applications/${app.id}/form`}>
+                    <FileText size={16} /> Open Form 6
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {c && (
             <Card className="gap-2 p-5 text-sm">

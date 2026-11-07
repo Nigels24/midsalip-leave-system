@@ -120,3 +120,30 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Printing CS Form No. 6 (/applications/[id]/form) and the leave card (/credits). The app shell's sidebar, header and the
+   buttons carry Tailwind's print:hidden, so only the form itself reaches the paper.
+   No paper size is set, so the same one-page form fits both A4 and Letter. */
+.shade {
+  background: #f1f5f9; /* light grey band behind the section titles */
+}
+@media print {
+  @page {
+    margin: 10mm;
+  }
+  body {
+    background: #fff;
+    -webkit-print-color-adjust: exact; /* keep the grey bands and the QR code exactly as on screen */
+    print-color-adjust: exact;
+  }
+  [data-sonner-toaster] {
+    display: none !important; /* no pop-up messages on paper */
+  }
+  .print-area {
+    max-width: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}

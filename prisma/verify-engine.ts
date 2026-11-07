@@ -5,7 +5,7 @@
 import "dotenv/config";
 import { Prisma, type Sex, type EmploymentStatus } from "../src/generated/prisma/client";
 import { db } from "../src/lib/db";
-import { toDbDate } from "../src/lib/dates";
+import { fromDbDate, toDbDate, todayInManila } from "../src/lib/dates";
 import { countLeaveDays } from "../src/lib/leave-types";
 import {
   actOn,
@@ -17,8 +17,17 @@ import {
   LeaveError,
   waitingForWhere,
   type FileLeaveInput,
+  accrualPreview,
+  postAccrual,
 } from "../src/server/leave";
+import { createEmployee, newEmployeeSchema, setEmployeeActive, setOfficeHead } from "../src/server/employee-rules";
 import { OPEN_STATUSES } from "../src/lib/constants";
+import { checkSignatureDataUrl } from "../src/lib/signature";
+import { leaveOnDay, monthGrid, parseMonth, shiftMonth } from "../src/lib/calendar";
+import { leaveCardRows } from "../src/lib/leave-card";
+import { BOM, csvCell, toCsv } from "../src/lib/csv";
+import { monthlyTotals, safeAuditDetail, sumDecimals } from "../src/lib/report-math";
+import { normalizeRefNo, publicVerifyResult, verifyUrl, type VerifyRecord } from "../src/lib/verify";
 
 type Tx = Prisma.TransactionClient;
 
@@ -216,9 +225,234 @@ async function scenarios(tx: Tx) {
     const same = listed.length === expected.length && listed.every((a) => expected.includes(a.id));
     check(`${person.username}: ${listed.length} waiting, same as canAct`, same, `list ${listed.length}, canAct ${expected.length}`);
   }
+
+  console.log("\nr) Monthly credit posting and account safety rules");
+  const today = todayInManila();
+  const month = shiftMonth(today.slice(0, 7), -1); // last month: never in the future
+  const lateHire = await temp("FEMALE", "PERMANENT");
+  await tx.employee.update({ where: { id: lateHire.id }, data: { originalAppointment: toDbDate(today) } }); // hired after that month
+  const bal = async (id: string) => [await balance(tx, id, "VL"), await balance(tx, id, "SL")] as const;
+  const [permVL, permSL] = await bal(permMale.id);
+  const [cosVL, cosSL] = await bal(cosFemale.id);
+
+  const preview = await accrualPreview(tx, month, today);
+  check("preview lists credit earners only", preview.toPost.some((e) => e.id === permMale.id) && !preview.toPost.some((e) => e.id === cosFemale.id));
+  check("preview skips someone appointed after the month", !preview.toPost.some((e) => e.id === lateHire.id));
+
+  const posted = await postAccrual(tx, month, hrmo.id, today);
+  const [permVL2, permSL2] = await bal(permMale.id);
+  check(`posted ${posted.employees} employees, 2 entries each`, posted.entries === posted.employees * 2, `${posted.entries} entries`);
+  check("permanent employee: VL = before + 1.25", permVL2.equals(permVL.plus("1.25")), `${permVL} -> ${permVL2}`);
+  check("permanent employee: SL = before + 1.25", permSL2.equals(permSL.plus("1.25")), `${permSL} -> ${permSL2}`);
+  const [cosVL2, cosSL2] = await bal(cosFemale.id);
+  check("COS employee gets nothing", cosVL2.equals(cosVL) && cosSL2.equals(cosSL));
+  check("late hire gets nothing", (await bal(lateHire.id)).every((b) => b.isZero()));
+
+  const entriesBefore = await tx.ledgerEntry.count({ where: { accrualMonth: month } });
+  await rejects("posting the same month again is refused", () => postAccrual(tx, month, hrmo.id, today), "Nothing to post");
+  check("posting again added no ledger entries", (await tx.ledgerEntry.count({ where: { accrualMonth: month } })) === entriesBefore);
+  check("balance unchanged after the second attempt", (await balance(tx, permMale.id, "VL")).equals(permVL2));
+  await rejects("a future month is refused", () => postAccrual(tx, shiftMonth(today.slice(0, 7), 1), hrmo.id, today), "future month");
+
+  await rejects("the last active HRMO cannot be deactivated", () => setEmployeeActive(tx, hrmo.id, false, mayor.id), "only active HRMO");
+  await rejects("the last active Approving Authority cannot be deactivated", () => setEmployeeActive(tx, mayor.id, false, hrmo.id), "only active Approving Authority");
+  await rejects("the HRMO cannot deactivate themselves", () => setEmployeeActive(tx, hrmo.id, false, hrmo.id), "your own account");
+  await rejects("an office head cannot be deactivated", () => setEmployeeActive(tx, treasurer.id, false, hrmo.id), "Set another head");
+  const permFemaleOpen = await tx.leaveApplication.count({ where: { employeeId: permFemale.id, status: { in: OPEN_STATUSES } } });
+  if (permFemaleOpen > 0) {
+    await rejects("an employee with open applications cannot be deactivated", () => setEmployeeActive(tx, permFemale.id, false, hrmo.id), "open application");
+  }
+  await rejects("a head must belong to the office", () => setOfficeHead(tx, "MEO", jpepito.id, hrmo.id), "does not belong");
+  const duplicate = newEmployeeSchema.parse({
+    employeeNo: "VERIFY-DUP",
+    firstName: "Dup",
+    middleInitial: "",
+    lastName: "Licate",
+    sex: "MALE",
+    position: "Test",
+    salaryGrade: "1",
+    monthlySalary: "",
+    officeId: "MEO",
+    status: "PERMANENT",
+    role: "EMPLOYEE",
+    originalAppointment: "2025-01-02",
+    username: " JPepito ", // normalized to "jpepito", which exists
+    password: "temporary-123",
+    openingVL: "",
+    openingSL: "",
+  });
+  await rejects("a duplicate username is refused (any case)", () => createEmployee(tx, duplicate, hrmo.id), "already taken");
+
+  console.log("\nt) Office without a head (fresh install)");
+  await tx.office.create({ data: { id: "VRFY", name: "Verify Office" } }); // no head
+  const headless = await temp("FEMALE", "PERMANENT");
+  await tx.employee.update({ where: { id: headless.id }, data: { officeId: "VRFY" } });
+  // Enough VL credits, so a refusal can only come from the missing head (not from the balance).
+  await tx.ledgerEntry.create({
+    data: { employeeId: headless.id, kind: "VL", date: toDbDate("2026-01-01"), particulars: "Verify opening balance", earned: new Prisma.Decimal(10) },
+  });
+  const headlessVL = await balance(tx, headless.id, "VL");
+  check("headless-office employee has VL credits", headlessVL.greaterThanOrEqualTo(1), headlessVL.toString());
+  const headlessInput = input(headless.id, "VL", "2026-12-21", "2026-12-21", VACATION);
+  await rejects("filing is refused until the office has a head", () => fileLeave(tx, headlessInput, headless.id), "no department head");
+
+  // Once the HRMO sets a head, the same filing goes through to that head for recommendation.
+  const newHead = await temp("MALE", "PERMANENT");
+  await tx.employee.update({ where: { id: newHead.id }, data: { officeId: "VRFY" } });
+  await setOfficeHead(tx, "VRFY", newHead.id, hrmo.id);
+  const appT = await fileLeave(tx, headlessInput, headless.id);
+  check("after a head is set, the same filing succeeds", appT.status === "FOR_RECOMMENDATION", appT.status);
+  check("the new head is the one to act", await canAct(tx, appT, newHead.id));
+}
+
+/** o) The e-signature validator (pure function, no database). */
+function signatureChecks() {
+  console.log("\no) E-signature validator");
+  const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+  check("a small PNG is accepted", checkSignatureDataUrl(tinyPng) === null);
+  check("a JPEG is accepted", checkSignatureDataUrl("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD") === null);
+  check("SVG is rejected", checkSignatureDataUrl("data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=") !== null);
+  check("PNG label with non-PNG content is rejected", checkSignatureDataUrl("data:image/png;base64,/9j/4AAQSkZJRg==") !== null);
+  check("not a data URL is rejected", checkSignatureDataUrl("https://example.com/sig.png") !== null);
+  check("over 200 KB is rejected", checkSignatureDataUrl(`data:image/png;base64,iVBORw0KGgo${"A".repeat(300_000)}`) !== null);
+}
+
+/** p) Public QR verification: the URL in the QR code and what the public page may show (pure, no database). */
+function verifyChecks() {
+  console.log("\np) Public QR verification");
+  check("reference number normalized", normalizeRefNo(" mmh-2026-k7qx -3mpa ") === "MMH-2026-K7QX-3MPA");
+  check(
+    "QR URL uses the request host (LAN address)",
+    verifyUrl("mmh-2026-k7qx-3mpa", { host: "192.168.1.10:3000" }) === "http://192.168.1.10:3000/verify/MMH-2026-K7QX-3MPA",
+  );
+  check(
+    "QR URL uses https behind a proxy",
+    verifyUrl("MMH-2026-K7QX-3MPA", { host: "mmh.example.org", proto: "https" }) === "https://mmh.example.org/verify/MMH-2026-K7QX-3MPA",
+  );
+  check(
+    "APP_URL overrides the request host",
+    verifyUrl("MMH-2026-K7QX-3MPA", { appUrl: "https://leave.midsalip.gov.ph/", host: "localhost:3000" }) ===
+      "https://leave.midsalip.gov.ph/verify/MMH-2026-K7QX-3MPA",
+  );
+
+  const record: VerifyRecord = {
+    refNo: "MMH-2026-K7QX-3MPA",
+    status: "APPROVED",
+    employeeName: "Juan P. Pepito",
+    officeName: "Human Resource Management Office",
+    leaveTypeName: "Vacation Leave",
+    dates: "Dec 1, 2026 – Dec 3, 2026",
+    days: "3",
+    approvedAt: "Nov 7, 2026, 9:15 AM",
+    officers: [
+      { step: "FILED", name: "Juan P. Pepito", position: "Admin Aide" },
+      { step: "RECOMMENDED", name: "Head", position: "MGDH I" },
+      { step: "CERTIFIED", name: "HRMO", position: "HRMO II" },
+      { step: "APPROVED", name: "Mayor", position: "Municipal Mayor" },
+    ],
+  };
+  const approved = publicVerifyResult(record.refNo, record);
+  check("approved -> AUTHENTIC with the details", approved.kind === "AUTHENTIC" && approved.employeeName === "Juan P. Pepito");
+  check(
+    "approved -> only the recommending, certifying and approving officers",
+    approved.kind === "AUTHENTIC" && approved.officers.map((o) => o.label).join("|") === "Recommended by|Certified by|Approved by",
+  );
+
+  for (const status of ["FOR_APPROVAL", "DISAPPROVED", "CANCELLED"] as const) {
+    const result = publicVerifyResult(record.refNo, { ...record, status });
+    const keys = Object.keys(result).sort().join(",");
+    check(`${status} -> status only, no personal details`, result.kind === "NOT_APPROVED" && keys === "kind,refNo,status", `keys: ${keys}`);
+  }
+  check("unknown reference -> NOT_FOUND", publicVerifyResult("MMH-0000-AAAA-AAAA", null).kind === "NOT_FOUND");
+}
+
+/** q) Leave card running balance and the calendar month grid (pure), plus the card against balance(). */
+async function cardAndCalendarChecks() {
+  console.log("\nq) Leave card and calendar helpers");
+  const d = (n: number | string) => new Prisma.Decimal(n);
+  const rows = leaveCardRows([
+    { date: "2026-02-28", particulars: "Earned – February 2026", kind: "SL", earned: d("1.25"), deducted: d(0) },
+    { date: "2026-01-31", particulars: "Earned – January 2026", kind: "VL", earned: d("1.25"), deducted: d(0) },
+    { date: "2026-01-31", particulars: "Earned – January 2026", kind: "SL", earned: d("1.25"), deducted: d(0) },
+    { date: "2026-02-28", particulars: "Earned – February 2026", kind: "VL", earned: d("1.25"), deducted: d(0) },
+    { date: "2026-03-05", particulars: "Vacation Leave (MMH-2026-AAAA-AAAA)", kind: "VL", earned: d(0), deducted: d("0.5") },
+  ]);
+  check("VL and SL of the same transaction share one row", rows.length === 3, `${rows.length} rows`);
+  check("rows in date order", rows.map((r) => r.date).join(",") === "2026-01-31,2026-02-28,2026-03-05");
+  check("running VL balance exact (1.25 + 1.25 - 0.5 = 2)", rows[2].vlBalance.equals(2) && rows[1].vlBalance.equals("2.5"));
+  check("running SL balance carried to the last row", rows[2].slBalance.equals("2.5"));
+
+  check("Feb 2026 grid is exactly 4 weeks (starts on a Sunday)", monthGrid("2026-02").length === 28 && monthGrid("2026-02")[0].iso === "2026-02-01");
+  const nov = monthGrid("2026-11");
+  check("Nov 2026 grid runs Sun Nov 1 to Sat Dec 5", nov[0].iso === "2026-11-01" && nov.at(-1)?.iso === "2026-12-05" && !nov.at(-1)!.inMonth);
+  const may = monthGrid("2026-05");
+  check("May 2026 grid starts on Sunday Apr 26", may[0].iso === "2026-04-26" && may.length === 42);
+  check("month navigation crosses the year", shiftMonth("2026-01", -1) === "2025-12" && shiftMonth("2026-12", 1) === "2027-01");
+  check("bad ?month falls back to this month", parseMonth("2026-13", "2026-11-07") === "2026-11" && parseMonth("2026-03", "2026-11-07") === "2026-03");
+
+  const leave = [
+    { startDate: "2026-11-06", endDate: "2026-11-09", typeCode: "VL" },
+    { startDate: "2026-11-06", endDate: "2026-11-09", typeCode: "ML" },
+  ];
+  const sat = nov.find((x) => x.iso === "2026-11-07")!;
+  const mon = nov.find((x) => x.iso === "2026-11-09")!;
+  check("weekend: only calendar-day leave (ML) shows", leaveOnDay(leave, sat, new Set()).map((a) => a.typeCode).join() === "ML");
+  check("working day: both show", leaveOnDay(leave, mon, new Set()).length === 2);
+  check("holiday: only calendar-day leave shows", leaveOnDay(leave, mon, new Set(["2026-11-09"])).length === 1);
+
+  // The leave card's last row must equal balance() for every seeded employee (read only).
+  const employees = await db.employee.findMany({ select: { id: true } });
+  let mismatches = 0;
+  for (const e of employees) {
+    const entries = await db.ledgerEntry.findMany({ where: { employeeId: e.id }, orderBy: [{ date: "asc" }, { createdAt: "asc" }] });
+    const last = leaveCardRows(entries.map((x) => ({ ...x, date: fromDbDate(x.date) }))).at(-1);
+    const [vl, sl] = [await balance(db, e.id, "VL"), await balance(db, e.id, "SL")];
+    if (!(last ? last.vlBalance.equals(vl) && last.slBalance.equals(sl) : vl.isZero() && sl.isZero())) mismatches++;
+  }
+  check(`leave card final balance equals balance() for all ${employees.length} employees`, mismatches === 0, `${mismatches} differ`);
+}
+
+/** s) Reports: CSV escaping, Decimal totals, monthly trend, audit detail clean-up (pure, no database). */
+function reportChecks() {
+  console.log("\ns) Reports and CSV");
+  check("plain cell unchanged", csvCell("Vacation Leave") === "Vacation Leave");
+  check("comma -> quoted", csvCell("Dizon, Mark") === '"Dizon, Mark"');
+  check('quote -> doubled and quoted', csvCell('the "Mayor"') === '"the ""Mayor"""');
+  check("newline -> quoted", csvCell("line 1\nline 2") === '"line 1\nline 2"');
+  check("formula is neutralized", csvCell("=SUM(A1:A9)") === "'=SUM(A1:A9)");
+  check("negative number stays a number", csvCell("-1.250") === "-1.250");
+  const file = toCsv([["Employee", "Days"], ["Peñaflor, Ana", "2.500"]]);
+  check("file starts with the UTF-8 BOM", file.startsWith(BOM) && BOM === "\uFEFF");
+  check("rows end with CRLF", file === `${BOM}Employee,Days\r\n"Peñaflor, Ana",2.500\r\n`);
+
+  const d = (n: string) => new Prisma.Decimal(n);
+  check("Decimal total is exact (0.1 + 0.2 = 0.3)", sumDecimals([d("0.1"), d("0.2")]).equals("0.3"));
+  const months = monthlyTotals(
+    [
+      { startDate: "2026-03-30", days: d("3") }, // runs into April but counts in March (start month)
+      { startDate: "2026-03-02", days: d("0.5") },
+      { startDate: "2026-11-09", days: d("2") },
+      { startDate: "2025-12-31", days: d("9") }, // another year: ignored
+    ],
+    2026,
+  );
+  check("12 months, January first", months.length === 12 && months[0].month === "2026-01");
+  check("March: 2 applications, 3.5 days", months[2].count === 2 && months[2].days.equals("3.5"));
+  check("other years are ignored", sumDecimals(months.map((m) => m.days)).equals("5.5"));
+
+  check(
+    "audit detail hides a bcrypt hash",
+    // A bcrypt hash is 60 characters: "$2b$10$" plus 53 more.
+    safeAuditDetail(`x $2b$10$${"N9qo8uLOickgx2ZMRZoMye".padEnd(53, "A")} y`) === "x [hidden] y",
+  );
+  check("audit detail hides a signature data URL", safeAuditDetail("sig data:image/png;base64,iVBORw0KGgo= end") === "sig [image] end");
 }
 
 async function main() {
+  signatureChecks();
+  verifyChecks();
+  await cardAndCalendarChecks();
+  reportChecks();
   try {
     // Long timeout: the default (5 s) is too short for all scenarios in one transaction.
     await db.$transaction(

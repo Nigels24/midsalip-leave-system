@@ -8,12 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - The stack is fixed by the manuscript (Chapter 3, Table 3.2): Next.js, Prisma, PostgreSQL 16, Tailwind CSS, QR code generation, deployed on a Windows PC over the municipal LAN. (The manuscript originally specified MySQL; the owner chose PostgreSQL so the system can also be deployed on Render with a Neon database.) Don't add other technologies. Never add next-auth: auth is a custom signed-cookie session using `jose` and `bcryptjs`.
 - Keep the code simple enough for a student to explain every file at the thesis defense.
 - This system must reproduce the behavior of the localStorage prototype in `../midsalip-system-prototype` (business rules are in its `src/lib/engine.ts`), changed only where the panel revisions below say so.
-- Local database: PostgreSQL 16 in Docker, on port 5433:
-  `docker run -d --name midsalip-postgres -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=midsalip_leave -p 5433:5432 postgres:16-alpine`
+- Local database: PostgreSQL 16 in Docker via `docker-compose.yml` (container `midsalip-postgres`, host port 5433, volume `midsalip-pgdata`; all overridable from `.env`): `docker compose up -d`. The app itself runs with Node, not Docker.
+
+## Install, setup and handoff
+
+- The client runs `docker compose up -d`, `npm run setup`, `npm run build`, `npm run start:lan` (README.md, written for a non-technical reader). `setup` is `scripts/setup.mjs`: install if needed, `.env` from `.env.example` (`scripts/setup-env.mjs`, random `SESSION_SECRET` and `SEED_ADMIN_PASSWORD`, never overwrites), wait for the DB, `prisma generate`, `prisma migrate deploy`, production seed. It must stay safe to run twice.
+- Two seeds, never both on one database: `prisma/seed.ts` (demo data, `npm run db:seed`, dev only) and `prisma/seed-production.ts` (offices, leave types, holidays, starter accounts `hrmo` and `mayor` with placeholder names). Shared lists live in `prisma/seed-data.ts`. Neither seed resets a password or overwrites later edits (leave type rules excepted: they follow the code).
+- A fresh install has offices without a head; `fileLeave` refuses filing for such an office until the HRMO sets the head (`verify:engine` scenario t).
+- Scripts in `scripts/` are plain Node `.mjs` (no packages, no shell syntax) so they run on Windows. Backups: `npm run db:backup` / `db:restore` via `docker exec` into `backups/` (gitignored).
+- The end-to-end browser test plan is `docs/TEST-CHECKLIST.md`; add to it when a feature changes.
 
 ## Auth
 
-- **Session:** `src/lib/session.ts`. A signed cookie `mmh-session` (JWT, HS256, `jose`) that holds only the employee id. HttpOnly, SameSite=Lax, Secure in production, expires after 8 hours. `SESSION_SECRET` (32+ characters) signs it.
+- **Session:** `src/lib/session.ts`. A signed cookie `mmh-session` (JWT, HS256, `jose`) that holds only the employee id. HttpOnly, SameSite=Lax, expires after 8 hours. Secure (HTTPS only) when `COOKIE_SECURE="true"`, or when unset and `APP_URL` starts with `https://`; never on the plain-http LAN, or nobody could stay logged in. `SESSION_SECRET` (32+ characters) signs it.
 - **Current user:** `getCurrentUser()` in `src/server/auth.ts` verifies the cookie and loads the employee and office from the database on every request (wrapped in React `cache`, so once per request). A deactivated or deleted account is treated as signed out immediately. It never loads `passwordHash` (or `signature`).
 - **Guards:** `requireUser()` redirects to `/login`; `requireRole(...roles)` redirects a wrong role to `/dashboard`. Page roles come from `src/config/nav.ts` via `rolesFor("/path")`, so the sidebar and the page guard always agree.
 - **Rule:** every protected page AND every server action calls `requireUser()` or `requireRole()` itself. `src/proxy.ts` (Next 16's name for middleware) only checks that the cookie is validly signed and redirects to `/login`. It is a first gate, not the authorization. `/login`, `/verify` and `/verify/*` are public.
@@ -27,6 +34,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Each function takes the database client first (`db` or a transaction `tx`) and runs its writes in one transaction (nested calls become savepoints). All checks run before the first write.
 - Who acts next: `actorsFor()`/`canAct()` for one application, `waitingForWhere(user)` as the database filter for lists (For My Action, sidebar badge). The recommendation goes to the head of the applicant's office whatever their role (the HRMO and the mayor head offices too). Keep the two in sync; `verify:engine` scenario n checks it.
 - Day counts: `countLeaveDays()` in `src/lib/leave-types.ts` (calendar days for ML and SLBW, working days otherwise, holidays from the Holiday table). "Today" is `todayInManila()` from `src/lib/dates.ts`, never `new Date()` on its own.
+- Employees, accounts, passwords and office heads change only through `src/server/employee-rules.ts` (zod schemas plus the safety rules: no self-deactivation or own role change, always one active HRMO and one active APPROVER, an office head cannot be deactivated or moved, no deactivation with open applications). It refuses with `LeaveError` like the leave rules. Monthly credits are posted only by `postAccrual()` in `src/server/leave/accrual.ts` (unique employee + kind + accrualMonth, `createMany({ skipDuplicates })`). Earning statuses always come from `CREDIT_EARNING_STATUSES`.
 - `npm run verify:engine` runs `prisma/verify-engine.ts`: every rule scenario against the seeded data inside one transaction that is rolled back, printing PASS/FAIL per check (exit code 1 on any failure). Run it after changing any rule, and add a scenario for any new rule.
 
 ## Screens
@@ -35,6 +43,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Prisma.Decimal and Date never cross to a client component.** The server page converts them first: Decimal -> number or string, Date -> "YYYY-MM-DD" (`fromDbDate`). Client components get plain data only, and never `passwordHash` or `signature`.
 - **Every page and every server action checks the role itself** (`requireRole(...rolesFor("/route"))` or `requireUser()` plus an explicit access check, as in `applications/[id]/page.tsx`). Server actions live in `src/server/*-actions.ts`, validate their input with zod, call `src/server/leave`, and return `LeaveError.message` as `{ error }`.
 - The UI may mirror a rule for a live hint (e.g. the day count and allowance warnings on File Leave), but the server decides.
+- Leave card running balances come from `leaveCardRows()` (`src/lib/leave-card.ts`); its last row must equal `balance()` (`verify:engine` scenario q). Calendar grid and "who is on leave on a day" come from `src/lib/calendar.ts`. On the calendar, leave the user may not open shows the name only, never the leave type.
+- Reports are built once in `src/server/reports.ts` as plain string tables; `/reports` shows them and `/reports/export/[report]` (a route handler that checks the role itself) downloads them as CSV through `toCsv()` in `src/lib/csv.ts`. Audit details pass through `safeAuditDetail()` before display.
 - List filters and paging go in the URL (`?q=&status=&type=&page=`) and are done in the database query.
 
 ## Panel revisions
@@ -45,8 +55,10 @@ The capstone panel asked for these at the pre-oral defense. Every later step mus
 2. **Wellness Leave (WL) and Maternity Leave (ML)** are leave types (14 types in total).
 3. **Days follow the allowed days for the type.** `LeaveType.maxDaysPerYear` is the yearly cap (null = limited only by the VL/SL balance, or no fixed cap). The filing form must reject more days than are left this year, and must not offer a type the employee has already used up for the year. ML and SLBW are counted in calendar days (see `ruleNote`). Sex-specific types (ML, SLBW, VAWC for women, PL for men) are checked against `Employee.sex`.
 4. **Convertible vs non-convertible.** `LeaveType.convertible` is true only for VL and SL (monetization / terminal leave). Show it wherever leave types are listed.
-5. **E-signatures are placed automatically.** `Employee.signature` holds a data URL of the signature image. When a signee acts on an application (recommend, certify, approve), CS Form 6 shows that person's signature on their line. The upload screen is a later step.
+5. **E-signatures are placed automatically.** `Employee.signature` holds a data URL of the signature image. When a signee acts on an application (recommend, certify, approve), CS Form 6 shows that person's signature on their line. Users set it on `/profile` (upload PNG/JPG or draw), checked by `checkSignatureDataUrl()` in `src/lib/signature.ts` in the browser and in `setSignatureAction`. Uploads are PNG/JPG only, never SVG; only the seed writes SVG demo signatures. Each `ApprovalAction.signature` is a snapshot taken when the person acts, so the printed form must use the action's copy, not `Employee.signature`.
 6. **Who files.** Employees file their own leave, and the HRMO may file on behalf of an employee. `LeaveApplication.filedById` records who encoded it (relation "FiledBy"); the applicant is still `employeeId`. Show "Filed by" on the application and in the audit log.
+7. **Signed CS Form No. 6.** `/applications/[id]/form` prints the form for APPROVED applications only (access rule `canViewApplication()` in `src/server/application-access.ts`, shared with the detail page). Each signature line uses its `ApprovalAction.signature` snapshot; the applicant's line stays blank when the HRMO filed on their behalf.
+8. **Public QR verification.** The QR (made on the server by `src/server/qr.ts`) encodes `/verify/[refNo]` on the request host, or on `APP_URL` when set. `/verify` and `/verify/[refNo]` need no login. What the public page may show is decided only by `publicVerifyResult()` in `src/lib/verify.ts` (`verify:engine` scenario p); each lookup of an existing reference writes an AuditLog `VERIFY_QR` row with a null actor.
 
 The defaults for (1) to (4) are in a comment block at the top of `src/lib/leave-types.ts`. Items marked "to be confirmed by HRMO" there are not settled yet.
 

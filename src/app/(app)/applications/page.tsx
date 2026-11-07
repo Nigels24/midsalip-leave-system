@@ -9,15 +9,13 @@ import { ApplicationsTable } from "@/components/leave/applications-table";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { buildHref, Pagination, selectClass } from "@/components/list-controls";
 import { rolesFor } from "@/config/nav";
 import { STATUS_LABELS } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { requireRole } from "@/server/auth";
 
 const PAGE_SIZE = 15;
-
-// Native <select> styled like the shadcn Input, so the filter form works without JavaScript.
-const selectClass = "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs";
 
 type SearchParams = { q?: string; status?: string; type?: string; page?: string };
 
@@ -56,15 +54,7 @@ export default async function MyApplicationsPage({ searchParams }: { searchParam
   const filtered = Boolean(q || status || type);
 
   /** Same filters, another page number. */
-  const pageHref = (n: number) => {
-    const sp = new URLSearchParams();
-    if (q) sp.set("q", q);
-    if (status) sp.set("status", status);
-    if (type) sp.set("type", type);
-    if (n > 1) sp.set("page", String(n));
-    const s = sp.toString();
-    return s ? `/applications?${s}` : "/applications";
-  };
+  const pageHref = (n: number) => buildHref("/applications", { q, status, type, page: n > 1 ? n : undefined });
 
   return (
     <>
@@ -120,34 +110,8 @@ export default async function MyApplicationsPage({ searchParams }: { searchParam
           empty={filtered ? "No applications match these filters." : "You have not filed any leave yet."}
         />
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t px-4 py-2.5 text-xs text-slate-500">
-          <span>
-            Showing {applications.length} of {total}
-          </span>
-          {pages > 1 && (
-            <div className="flex items-center gap-2">
-              <PageLink href={pageHref(page - 1)} disabled={page <= 1}>
-                Previous
-              </PageLink>
-              <span>
-                Page {page} of {pages}
-              </span>
-              <PageLink href={pageHref(page + 1)} disabled={page >= pages}>
-                Next
-              </PageLink>
-            </div>
-          )}
-        </div>
+        <Pagination page={page} pages={pages} shown={applications.length} total={total} hrefFor={pageHref} />
       </Card>
     </>
-  );
-}
-
-function PageLink({ href, disabled, children }: { href: string; disabled: boolean; children: React.ReactNode }) {
-  if (disabled) return <span className="rounded-md border px-2.5 py-1 opacity-40">{children}</span>;
-  return (
-    <Link href={href} className="rounded-md border px-2.5 py-1 hover:bg-slate-50">
-      {children}
-    </Link>
   );
 }

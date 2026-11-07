@@ -44,3 +44,19 @@ export function fmtRange(start: string | Date, end: string | Date) {
 export function fmtNum(value: number | string | { toString(): string }) {
   return Number(value.toString()).toLocaleString("en-PH", { maximumFractionDigits: 3 });
 }
+
+/** 25000 -> "₱25,000" (as on the prototype's CS Form 6). Accepts numbers, strings and Prisma.Decimal. */
+export function peso(value: number | string | { toString(): string }) {
+  return Number(value.toString()).toLocaleString("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
+}
+
+/** "Saturday, November 7, 2026": today's date in the Philippines, for the dashboard greeting. */
+export function fmtToday(now: Date = new Date()) {
+  return now.toLocaleDateString("en-PH", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+/** "Good morning" / "Good afternoon" / "Good evening" by the hour in the Philippines. */
+export function greeting(now: Date = new Date()) {
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }).format(now));
+  return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}

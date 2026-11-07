@@ -1,26 +1,27 @@
-// Verify QR Code (public placeholder). No login needed: anyone who scans the QR code
-// on a printed CS Form No. 6 lands here. The proxy lets /verify and /verify/* through.
-import Link from "next/link";
-import { Seal } from "@/components/seal";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { APP } from "@/lib/constants";
+// Verify QR Code (public, no login). Type the reference number printed under the QR code,
+// or scan the code with a phone camera, which opens /verify/[refNo] directly.
+// The proxy (src/proxy.ts) lets /verify and /verify/* through without a session.
+import { redirect } from "next/navigation";
+import { Camera } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { normalizeRefNo } from "@/lib/verify";
+import { VerifyForm } from "./verify-form";
+import { VerifyFrame } from "./verify-frame";
 
-export default function VerifyPage() {
+export default async function VerifyPage({ searchParams }: { searchParams: Promise<{ ref?: string }> }) {
+  // The prototype's QR codes used /verify?ref=...; send those to the new address.
+  const { ref } = await searchParams;
+  if (ref && normalizeRefNo(ref)) redirect(`/verify/${encodeURIComponent(normalizeRefNo(ref))}`);
+
   return (
-    <main className="flex min-h-screen items-center justify-center bg-muted p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="items-center text-center">
-          <Seal className="mx-auto h-16 w-16" />
-          <CardTitle className="text-xl">Verify a Leave Document</CardTitle>
-          <CardDescription>{APP.issuer}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 text-center text-sm text-muted-foreground">
-          <p>Scanning and checking reference numbers comes in a later step.</p>
-          <Link href="/login" className="font-medium text-brand-600 hover:underline">
-            Go to sign in
-          </Link>
-        </CardContent>
+    <VerifyFrame>
+      <Card className="gap-3 p-5">
+        <VerifyForm />
+        <p className="flex items-start gap-2 text-xs text-slate-500">
+          <Camera size={14} className="mt-0.5 shrink-0" /> Or scan the QR code on the printed CS Form No. 6 with any phone camera. It
+          opens the result page directly.
+        </p>
       </Card>
-    </main>
+    </VerifyFrame>
   );
 }

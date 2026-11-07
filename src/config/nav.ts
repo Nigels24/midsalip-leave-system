@@ -12,6 +12,7 @@ import {
   History,
   LayoutDashboard,
   QrCode,
+  UserRound,
   Users,
   Wallet,
   type LucideIcon,
@@ -35,13 +36,14 @@ export const NAV: NavItem[] = [
   { href: "/approvals", label: "For My Action", icon: ClipboardCheck, roles: SIGNATORIES, badge: "approvals" },
   { href: "/apply", label: "File Leave", icon: FilePlus2, roles: FILERS },
   { href: "/applications", label: "My Applications", icon: FileText, roles: FILERS },
-  { href: "/credits", label: "Leave Credits", icon: Wallet, roles: FILERS },
+  { href: "/credits", label: "Leave Credits", icon: Wallet, roles: ALL }, // the approver views any leave card
   { href: "/records", label: "Leave Records", icon: FolderOpen, roles: SIGNATORIES },
-  { href: "/calendar", label: "Leave Calendar", icon: CalendarDays, roles: SIGNATORIES },
+  { href: "/calendar", label: "Leave Calendar", icon: CalendarDays, roles: ALL }, // employees: their own office
   { href: "/employees", label: "Employees & Accounts", icon: Users, roles: ["HRMO"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["HRMO", "APPROVER"] },
   { href: "/audit", label: "Audit Trail", icon: History, roles: ["HRMO"] },
   { href: "/notifications", label: "Notifications", icon: Bell, roles: ALL, badge: "notifications" },
+  { href: "/profile", label: "My Profile", icon: UserRound, roles: ALL },
   { href: "/verify", label: "Verify QR Code", icon: QrCode, roles: ALL },
 ];
 

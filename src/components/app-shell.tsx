@@ -63,7 +63,7 @@ export function AppShell({ user, badges, children }: Props) {
   );
 
   return (
-    <div className="min-h-screen bg-muted lg:pl-64 print:pl-0">
+    <div className="min-h-screen bg-muted lg:pl-64 print:bg-white print:pl-0">
       {/* Desktop sidebar */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 bg-brand-900 lg:block print:hidden">{sidebar}</aside>
 
@@ -102,7 +102,8 @@ export function AppShell({ user, badges, children }: Props) {
           )}
         </Link>
 
-        <div className="flex items-center gap-2">
+        {/* The name opens My Profile (where the e-signature is set). */}
+        <Link href="/profile" className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2 hover:bg-slate-100" title="My Profile">
           <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-600 text-xs font-bold text-white">
             {user.initials}
           </span>
@@ -112,7 +113,7 @@ export function AppShell({ user, badges, children }: Props) {
               {user.roleLabel} · {user.position}
             </span>
           </span>
-        </div>
+        </Link>
 
         {/* Sign out is a form so it works through the logout server action. */}
         <form action={logout}>
@@ -127,7 +128,7 @@ export function AppShell({ user, badges, children }: Props) {
         </form>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 print:max-w-none print:p-0">{children}</main>
     </div>
   );
 }
