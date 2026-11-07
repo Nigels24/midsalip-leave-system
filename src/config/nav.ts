@@ -5,6 +5,7 @@ import {
   BarChart3,
   Bell,
   CalendarDays,
+  CalendarHeart,
   ClipboardCheck,
   FilePlus2,
   FileText,
@@ -40,6 +41,7 @@ export const NAV: NavItem[] = [
   { href: "/records", label: "Leave Records", icon: FolderOpen, roles: SIGNATORIES },
   { href: "/calendar", label: "Leave Calendar", icon: CalendarDays, roles: ALL }, // employees: their own office
   { href: "/employees", label: "Employees & Accounts", icon: Users, roles: ["HRMO"] },
+  { href: "/holidays", label: "Holidays", icon: CalendarHeart, roles: ["HRMO"] },
   { href: "/reports", label: "Reports", icon: BarChart3, roles: ["HRMO", "APPROVER"] },
   { href: "/audit", label: "Audit Trail", icon: History, roles: ["HRMO"] },
   { href: "/notifications", label: "Notifications", icon: Bell, roles: ALL, badge: "notifications" },

@@ -2,7 +2,9 @@
 //   npm run db:seed:production      (npm run setup runs it for you)
 //
 // What it creates:
-//   - the 7 offices, the 14 leave types and the holidays of this year and next year (prisma/seed-data.ts);
+//   - the 7 offices (only on a new install, so offices the HRMO renamed are not added back),
+//     the 14 leave types and the listed holidays of this year and next year (prisma/seed-data.ts;
+//     only for a year that has no holidays yet, so the HRMO's edits on /holidays are kept);
 //   - two starter accounts, because approvals need an HRMO and an Approving Authority:
 //       "hrmo"  (HRMO, heads the Human Resource Management Office)
 //       "mayor" (Approving Authority, heads the Office of the Municipal Mayor)
@@ -60,15 +62,16 @@ const STARTERS: StarterAccount[] = [
 ];
 
 async function main() {
-  // 1. Offices (created once; never renamed by the seed).
-  for (const [id, name] of OFFICES) {
-    await db.office.upsert({ where: { id }, update: {}, create: { id, name } });
+  // 1. Offices: only on a new install (no office yet). After that the HRMO adds and renames
+  //    offices on Employees & Accounts, and the seed must not bring back an old code or name.
+  if ((await db.office.count()) === 0) {
+    await db.office.createMany({ data: OFFICES.map(([id, name]) => ({ id, name })) });
   }
 
   // 2. Leave types and holidays (this year and next year).
   await seedLeaveTypes(db);
   const thisYear = yearOf(todayInManila());
-  const holidays = await seedHolidays(db, [thisYear, thisYear + 1]);
+  const holidaysAdded = await seedHolidays(db, [thisYear, thisYear + 1]);
 
   // 3. Starter accounts: created only if the username does not exist yet,
   //    so a later edit or password change is never undone.
@@ -110,20 +113,21 @@ async function main() {
   }
 
   // 4. Summary.
-  const [offices, withHead, employees, leaveTypes, holidayCount] = await Promise.all([
+  const [offices, withHead, employees, leaveTypes, holidayCount, holidaysThisYear] = await Promise.all([
     db.office.count(),
     db.office.count({ where: { headId: { not: null } } }),
     db.employee.count(),
     db.leaveType.count(),
     db.holiday.count(),
+    db.holiday.count({ where: { date: { gte: toDbDate(`${thisYear}-01-01`), lte: toDbDate(`${thisYear}-12-31`) } } }),
   ]);
   console.log("\nProduction seed complete:");
   console.log(`  offices      ${offices} (with a head: ${withHead})`);
   console.log(`  leave types  ${leaveTypes}`);
-  console.log(`  holidays     ${holidayCount} in total (${holidays} listed for ${thisYear}-${thisYear + 1})`);
+  console.log(`  holidays     ${holidayCount} in total (${holidaysAdded} added now, ${holidaysThisYear} in ${thisYear})`);
   console.log(`  employees    ${employees}`);
   console.log(created.length > 0 ? `  created      ${created.join(", ")} (password = SEED_ADMIN_PASSWORD)` : "  starter accounts already exist (left unchanged)");
-  if (holidays === 0) console.log(`  NOTE: no holidays are listed for ${thisYear}. Add them in prisma/seed-data.ts.`);
+  if (holidaysThisYear === 0) console.log(`  NOTE: there are no holidays for ${thisYear} yet. The HRMO adds them on the Holidays page.`);
 }
 
 main()

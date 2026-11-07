@@ -10,7 +10,7 @@ Run first, all must pass:
 ```
 npm run lint
 npm run build
-npm run verify:engine        # scenarios a to t, "All checks passed."
+npm run verify:engine        # scenarios a to u, "All checks passed."
 ```
 
 Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer` (head of MTO),
@@ -117,7 +117,21 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 - [ ] Deactivating yourself, the last HRMO or the last mayor, or an employee with open applications, is refused.
 - [ ] Reactivate works.
 - [ ] Reset password: the new temporary password works and nothing is shown back.
-- [ ] Office heads: set a new head; an Employee becomes a Department Head, and waiting recommendations move to the new head.
+- [ ] Offices: set a new head; an Employee becomes a Department Head, and waiting recommendations move to the new head.
+- [ ] Add office "Office of the Municipal Agriculturist", code `mao`: it shows as `MAO` with "No head yet". A code `mto` or the name "office of the municipal treasurer" (any case) is refused.
+- [ ] Add an employee to MAO and try to file leave as them: refused ("no department head yet"). Set the head, file again: it works.
+- [ ] Rename MTO to code `MTO2` and a new name: the head and employees stay with it (employee list, Records and Calendar show the new name), and `treasurer` still recommends MTO leave. Rename it back.
+- [ ] There is no delete or deactivate button for offices.
+
+## L2. Holidays (HRMO)
+
+- [ ] "Holidays" is in the sidebar for `hrmo` only; `jpepito`, `treasurer` and `mayor` opening `/holidays` go to the dashboard.
+- [ ] The page opens on this year (Manila time), sorted by date, with the weekday; the year links run from the earliest holiday to two years ahead.
+- [ ] Choose next year with no holidays: the empty state asks for the Malacañang proclamation.
+- [ ] Add a holiday on a weekday next year: File Leave over that week counts one day less, and the Leave Calendar shows it in red.
+- [ ] Adding a second holiday on the same date is refused with a clear message; an empty name is refused.
+- [ ] Edit the date and name; delete it (with a confirmation). An application filed before the change keeps its day count.
+- [ ] The Audit Trail shows ADD HOLIDAY, UPDATE HOLIDAY and DELETE HOLIDAY rows.
 
 ## M. Monthly credits (HRMO)
 
@@ -145,6 +159,14 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 - [ ] Make a change (e.g. file a leave), stop the app, run `npm run db:restore`, choose the backup and type `RESTORE`. The change is gone.
 - [ ] Typing anything other than `RESTORE` cancels, with nothing changed.
 - [ ] `backups/` is not listed by `git status`.
+
+## P2. Password recovery from the server console
+
+- [ ] `npm run reset-password -- hrmo`: typing shows nothing; a password shorter than 8 characters or two different entries are refused with "Nothing was changed".
+- [ ] With matching entries it prints "Password of ... was reset" (never the password); `hrmo` logs in with it, and the Audit Trail has a RESET PASSWORD row "... was reset from the server console" with no actor.
+- [ ] `npm run reset-password -- nobody` and a deactivated username print a clear message and exit with an error (`echo $?` / `echo %errorlevel%` is 1). Without a username it prints the usage.
+- [ ] Ctrl+C at the prompt cancels without changing anything.
+- [ ] Works in Windows Command Prompt / PowerShell as well as macOS/Linux Terminal.
 
 ## Q. Fresh install test (production setup, clean clone)
 
@@ -175,6 +197,7 @@ Uses a second database on port **5434** so your development database is not touc
 4. Check:
    - [ ] Setup prints "Production seed complete": 7 offices (2 with a head), 14 leave types, 16 holidays, 2 employees, and the starter password.
    - [ ] Running `npm run setup` again succeeds and says the starter accounts already exist.
+   - [ ] Rename an office and delete one 2026 holiday, then run `npm run setup` again: the old office and the holiday do not come back.
    - [ ] The login page shows no demo accounts. `hrmo` and `mayor` log in with the printed password.
    - [ ] Dashboard, Records, Calendar, Reports and Audit are empty but work. The audit log has a `SETUP` row.
    - [ ] Section L: rename the starter accounts, add an employee in MTO, try to file as them (refused: no head), set the MTO head, file again (works).

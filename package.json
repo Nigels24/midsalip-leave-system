@@ -23,7 +23,8 @@
     "db:reset": "prisma migrate reset && prisma db seed",
     "db:backup": "node scripts/backup.mjs",
     "db:restore": "node scripts/restore.mjs",
-    "verify:engine": "tsx prisma/verify-engine.ts"
+    "verify:engine": "tsx prisma/verify-engine.ts",
+    "reset-password": "tsx scripts/reset-password.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^7.0.3",

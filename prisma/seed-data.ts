@@ -17,9 +17,9 @@ export const OFFICES: [id: string, name: string][] = [
 ];
 
 /**
- * Philippine non-working holidays (used when counting working days).
- * Only 2026 is listed. Add next year's dates here when the President's proclamation is out,
- * then run the seed again (existing dates are kept, new ones are added).
+ * Philippine non-working holidays of 2026, the starting list of a new install.
+ * Later years are entered by the HRMO on the Holidays page (/holidays) from the yearly
+ * Malacañang proclamation, so they are not listed here.
  */
 export const HOLIDAYS: [date: string, name: string][] = [
   ["2026-01-01", "New Year's Day"],
@@ -61,11 +61,20 @@ export async function seedLeaveTypes(db: PrismaClient) {
   }
 }
 
-/** Adds the holidays of the given years (all years when none given). Existing dates are never changed. */
+/**
+ * Adds the listed holidays of the given years (all years when none given), but only for a year
+ * that has no holiday in the database yet. Once the HRMO has holidays for a year (and may have
+ * edited or deleted some on the Holidays page), running the seed again never adds them back.
+ * Returns how many holidays were added.
+ */
 export async function seedHolidays(db: PrismaClient, years?: number[]) {
-  const wanted = HOLIDAYS.filter(([date]) => !years || years.includes(Number(date.slice(0, 4))));
-  for (const [date, name] of wanted) {
-    await db.holiday.upsert({ where: { date: toDbDate(date) }, update: {}, create: { date: toDbDate(date), name } });
+  const listedYears = [...new Set(HOLIDAYS.map(([date]) => Number(date.slice(0, 4))))];
+  let added = 0;
+  for (const year of listedYears.filter((y) => !years || years.includes(y))) {
+    const existing = await db.holiday.count({ where: { date: { gte: toDbDate(`${year}-01-01`), lte: toDbDate(`${year}-12-31`) } } });
+    if (existing > 0) continue;
+    const rows = HOLIDAYS.filter(([date]) => date.startsWith(`${year}-`)).map(([date, name]) => ({ date: toDbDate(date), name }));
+    added += (await db.holiday.createMany({ data: rows, skipDuplicates: true })).count;
   }
-  return wanted.length;
+  return added;
 }

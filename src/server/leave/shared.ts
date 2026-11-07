@@ -25,7 +25,7 @@ export async function notify(tx: DbClient, userIds: string[], title: string, bod
   });
 }
 
-/** Writes one Audit Trail row. */
-export async function audit(tx: DbClient, actorId: string, action: string, detail: string) {
+/** Writes one Audit Trail row. actorId is null only for actions without a signed-in user (server console). */
+export async function audit(tx: DbClient, actorId: string | null, action: string, detail: string) {
   await tx.auditLog.create({ data: { actorId, action, detail } });
 }

@@ -1,6 +1,6 @@
 // Employees & Accounts (HRMO only): search and filter employees (?q=&office=&status=&role=&active=&page=),
-// add one, open one to edit, change office heads, and post the monthly credits.
-// All changes go through src/server/employee-rules.ts, which enforces the safety rules.
+// add one, open one to edit, add or rename offices, change office heads, and post the monthly credits.
+// All changes go through src/server/employee-rules.ts and office-rules.ts, which enforce the safety rules.
 import Link from "next/link";
 import { connection } from "next/server";
 import { CalendarPlus, Search, UserPlus } from "lucide-react";
@@ -16,6 +16,7 @@ import { EMPLOYMENT_STATUS_LABELS, ROLE_LABELS } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { fullName } from "@/lib/utils";
 import { requireRole } from "@/server/auth";
+import { AddOfficeButton, RenameOfficeButton } from "./office-form";
 import { OfficeHeadForm } from "./office-head-form";
 
 const PAGE_SIZE = 20;
@@ -204,25 +205,44 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
 
       <Card className="mt-6 gap-0 py-0">
         <CardHeader className="border-b py-4">
-          <CardTitle>Office heads</CardTitle>
-          <CardDescription>
-            The head recommends the leave of their office&apos;s staff. A change applies from now on: applications already
-            recommended keep their recommender, and those still waiting for recommendation go to the new head. An Employee
-            chosen as head becomes a Department Head.
-          </CardDescription>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <CardTitle>Offices</CardTitle>
+              <CardDescription className="mt-1.5">
+                The head recommends the leave of their office&apos;s staff. A change applies from now on: applications already
+                recommended keep their recommender, and those still waiting for recommendation go to the new head. An Employee
+                chosen as head becomes a Department Head. Offices are never deleted.
+              </CardDescription>
+            </div>
+            <AddOfficeButton />
+          </div>
         </CardHeader>
         <ul className="divide-y">
           {offices.map((o) => (
             <li key={o.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-800">{o.name}</p>
-                <p className="text-xs text-slate-500">Head: {o.head ? fullName(o.head) : "none"}</p>
+                <p className="text-sm font-medium text-slate-800">
+                  {o.name} <span className="ml-1 font-mono text-xs text-slate-500">{o.id}</span>
+                </p>
+                {o.head ? (
+                  <p className="text-xs text-slate-500">
+                    Head: {fullName(o.head)} · {o.employees.length} active employee(s)
+                  </p>
+                ) : (
+                  <p className="text-xs text-amber-700">
+                    No head yet: its employees cannot file leave until you set the head.
+                    {o.employees.length === 0 && " Add an employee to this office first."}
+                  </p>
+                )}
               </div>
-              <OfficeHeadForm
-                officeId={o.id}
-                currentHeadId={o.headId}
-                candidates={o.employees.map((e) => ({ id: e.id, label: `${fullName(e)} · ${ROLE_LABELS[e.role]}` }))}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <RenameOfficeButton officeId={o.id} name={o.name} />
+                <OfficeHeadForm
+                  officeId={o.id}
+                  currentHeadId={o.headId}
+                  candidates={o.employees.map((e) => ({ id: e.id, label: `${fullName(e)} · ${ROLE_LABELS[e.role]}` }))}
+                />
+              </div>
             </li>
           ))}
         </ul>

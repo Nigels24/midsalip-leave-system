@@ -33,6 +33,11 @@ export function fmtDateTime(value: Date | string) {
   });
 }
 
+/** "Tuesday" */
+export function fmtWeekday(value: string | Date) {
+  return toDate(value).toLocaleDateString("en-PH", { timeZone: TZ, weekday: "long" });
+}
+
 /** "Dec 1, 2026" or "Dec 1, 2026 – Dec 3, 2026" */
 export function fmtRange(start: string | Date, end: string | Date) {
   const a = fmtDate(start);

@@ -1,6 +1,6 @@
 "use server";
 // Employees & Accounts (HRMO only): thin wrappers that check the role, read the form,
-// and call the rules in src/server/employee-rules.ts or src/server/leave/accrual.ts.
+// and call the rules in src/server/employee-rules.ts, src/server/office-rules.ts or src/server/leave/accrual.ts.
 // A refusal (LeaveError) comes back as { error } for the form to show.
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -20,6 +20,7 @@ import {
   updateEmployee,
 } from "./employee-rules";
 import { LeaveError, postAccrual } from "./leave";
+import { createOffice, officeSchema, updateOffice } from "./office-rules";
 
 export type FormState = { error: string | null; message?: string };
 
@@ -101,6 +102,22 @@ export async function setOfficeHeadAction(officeId: string, _prev: FormState, fo
   const employeeId = idSchema.safeParse(text(formData, "headId"));
   if (!employeeId.success) return { error: "Choose the new head." };
   return run(() => setOfficeHead(db, idSchema.parse(officeId), employeeId.data, user.id), "Office head changed.");
+}
+
+const readOffice = (formData: FormData) => officeSchema.safeParse({ code: text(formData, "code"), name: text(formData, "name") });
+
+export async function createOfficeAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await hrmoOnly();
+  const parsed = readOffice(formData);
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  return run(() => createOffice(db, parsed.data, user.id), `Office added: ${parsed.data.name}. Set its head next.`);
+}
+
+export async function updateOfficeAction(officeId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await hrmoOnly();
+  const parsed = readOffice(formData);
+  if (!parsed.success) return { error: firstIssue(parsed.error) };
+  return run(() => updateOffice(db, idSchema.parse(officeId), parsed.data, user.id), "Office renamed.");
 }
 
 export async function postAccrualAction(month: string): Promise<FormState> {

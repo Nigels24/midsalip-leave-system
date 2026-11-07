@@ -34,7 +34,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
   const to = isIsoDate(params.to) ? params.to : undefined;
   const page = Math.max(1, Number(params.page) || 1);
 
-  // Actor: every word must match the first or last name (any case). Public QR scans have no actor.
+  // Actor: every word must match the first or last name (any case). Public QR scans and server console scripts have no actor.
   const words = actor.split(/\s+/).filter(Boolean);
   const where: Prisma.AuditLogWhereInput = {
     action,
@@ -126,7 +126,8 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
                         <p className="font-mono text-xs text-slate-500">{log.actor.username}</p>
                       </>
                     ) : (
-                      <span className="text-slate-500">Public (QR scan)</span>
+                      // No actor: a public QR scan, or the setup / reset-password scripts on the server.
+                      <span className="text-slate-500">{log.action === "VERIFY_QR" ? "Public (QR scan)" : "Server console"}</span>
                     )}
                   </TableCell>
                   <TableCell className="px-4">

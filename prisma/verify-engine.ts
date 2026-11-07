@@ -19,7 +19,10 @@ import {
   type FileLeaveInput,
   accrualPreview,
   postAccrual,
+  loadHolidays,
 } from "../src/server/leave";
+import { addHoliday, deleteHoliday, updateHoliday } from "../src/server/holiday-rules";
+import { createOffice, officeSchema, updateOffice } from "../src/server/office-rules";
 import { createEmployee, newEmployeeSchema, setEmployeeActive, setOfficeHead } from "../src/server/employee-rules";
 import { OPEN_STATUSES } from "../src/lib/constants";
 import { checkSignatureDataUrl } from "../src/lib/signature";
@@ -303,6 +306,44 @@ async function scenarios(tx: Tx) {
   const appT = await fileLeave(tx, headlessInput, headless.id);
   check("after a head is set, the same filing succeeds", appT.status === "FOR_RECOMMENDATION", appT.status);
   check("the new head is the one to act", await canAct(tx, appT, newHead.id));
+
+  console.log("\nu) Holidays and offices (HRMO screens)");
+  // Mon Mar 1 to Fri Mar 5, 2027 (a week the demo data has no holiday in).
+  const weekDays = async () => countLeaveDays("VL", "2027-03-01", "2027-03-05", await loadHolidays(tx, "2027-03-01", "2027-03-05"));
+  const daysBefore = await weekDays();
+  await addHoliday(tx, { date: "2027-03-03", name: "Verify Holiday" }, hrmo.id);
+  check("adding a holiday removes it from the working-day count", (await weekDays()) === daysBefore - 1, `${daysBefore} -> ${await weekDays()}`);
+  await rejects("a second holiday on the same date is refused", () => addHoliday(tx, { date: "2027-03-03", name: "Another" }, hrmo.id), "already a holiday");
+  await updateHoliday(tx, "2027-03-03", { date: "2027-03-04", name: "Verify Holiday (moved)" }, hrmo.id);
+  const moved = await tx.holiday.findUnique({ where: { date: toDbDate("2027-03-04") } });
+  check("editing a holiday can move its date", moved?.name === "Verify Holiday (moved)" && !(await tx.holiday.findUnique({ where: { date: toDbDate("2027-03-03") } })));
+  await deleteHoliday(tx, "2027-03-04", hrmo.id);
+  check("deleting a holiday restores the count", (await weekDays()) === daysBefore);
+  const holidayAudits = await tx.auditLog.count({ where: { action: { in: ["ADD_HOLIDAY", "UPDATE_HOLIDAY", "DELETE_HOLIDAY"] }, detail: { contains: "Verify Holiday" } } });
+  check("each holiday change writes an audit row", holidayAudits === 3, `${holidayAudits} rows`);
+
+  const mto = await tx.office.findUniqueOrThrow({ where: { id: "MTO" } });
+  await rejects("a duplicate office code is refused (any case)", () => createOffice(tx, officeSchema.parse({ code: "mto", name: "Some New Office" }), hrmo.id), "already used");
+  await rejects(
+    "a duplicate office name is refused (any case)",
+    () => createOffice(tx, officeSchema.parse({ code: "NEW1", name: mto.name.toUpperCase() }), hrmo.id),
+    "already an office named",
+  );
+  await createOffice(tx, officeSchema.parse({ code: "new1", name: "Verify New Office" }), hrmo.id);
+  const created = await tx.office.findUnique({ where: { id: "NEW1" } });
+  check("a new office is stored with a capital code and no head", created?.name === "Verify New Office" && created.headId === null);
+  await rejects("renaming to another office's code is refused", () => updateOffice(tx, "NEW1", officeSchema.parse({ code: "Mto", name: "Verify New Office" }), hrmo.id), "already used");
+
+  // Rename the office of scenario t (head: newHead, employees: headless and newHead).
+  const staffBefore = await tx.employee.count({ where: { officeId: "VRFY" } });
+  await updateOffice(tx, "VRFY", officeSchema.parse({ code: "vrfy-2", name: "Verify Office Renamed" }), hrmo.id);
+  const renamed = await tx.office.findUnique({ where: { id: "VRFY-2" }, include: { employees: { select: { id: true } } } });
+  check("renaming an office keeps its head", renamed?.headId === newHead.id, renamed?.headId ?? "not found");
+  check("renaming an office keeps its employees", renamed?.employees.length === staffBefore && staffBefore === 2, `${renamed?.employees.length} of ${staffBefore}`);
+  check("the old code is gone", !(await tx.office.findUnique({ where: { id: "VRFY" } })));
+  check("its waiting leave still goes to the same head", await canAct(tx, appT, newHead.id));
+  await updateOffice(tx, "VRFY-2", officeSchema.parse({ code: "VRFY-2", name: "verify office renamed" }), hrmo.id);
+  check("an office may change only the letter case of its own name", (await tx.office.findUnique({ where: { id: "VRFY-2" } }))?.name === "verify office renamed");
 }
 
 /** o) The e-signature validator (pure function, no database). */

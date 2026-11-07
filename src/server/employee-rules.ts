@@ -211,6 +211,28 @@ export async function resetPassword(client: DbClient, id: string, newPassword: s
   });
 }
 
+/**
+ * Password recovery from the server console (scripts/reset-password.mjs), for when the only HRMO
+ * forgot their password. Whoever can open a terminal on the server PC is trusted, so there is
+ * no signed-in actor: the audit row has a null actor. Returns the employee's name for the message.
+ */
+export async function resetPasswordFromConsole(client: DbClient, username: string, newPassword: string) {
+  return inTransaction(client, async (tx) => {
+    const password = passwordSchema.safeParse(newPassword);
+    if (!password.success) throw new LeaveError(password.error.issues[0]?.message ?? "Invalid password.");
+    const employee = await tx.employee.findUnique({
+      where: { username: normalizeUsername(username) },
+      select: { id: true, firstName: true, middleInitial: true, lastName: true, username: true, active: true },
+    });
+    if (!employee) throw new LeaveError(`There is no account with the username "${normalizeUsername(username)}".`);
+    if (!employee.active) throw new LeaveError(`The account "${employee.username}" is deactivated. Reactivate it first (another HRMO can do it on Employees & Accounts).`);
+
+    await tx.employee.update({ where: { id: employee.id }, data: { passwordHash: await bcrypt.hash(password.data, BCRYPT_ROUNDS) } });
+    await audit(tx, null, "RESET_PASSWORD", `Password of ${fullName(employee)} was reset from the server console`);
+    return fullName(employee);
+  });
+}
+
 /** Any user changes their own password; the current one must be right. */
 export async function changeOwnPassword(client: DbClient, userId: string, currentPassword: string, newPassword: string) {
   return inTransaction(client, async (tx) => {

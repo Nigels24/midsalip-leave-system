@@ -97,10 +97,14 @@ You can run `npm run setup` again at any time. It never deletes data and never r
      sex, position, salary grade and date of appointment.
    - **Add every employee** (Add employee). Give each one a temporary password; they can change it on
      My Profile. Enter their opening VL and SL balances from the paper leave card.
-   - In **Office heads**, set the **head of each office**. Employees of an office without a head cannot
+   - In **Offices**, check the office names. **Add office** for any office that is missing, or
+     **Rename** one. Then set the **head of each office**. Employees of an office without a head cannot
      file leave yet.
-4. Ask each signee (department heads, HRMO, mayor) to set their **e-signature** on **My Profile**.
-5. **Every month**, the HRMO posts the leave credits: **Employees & Accounts → Post monthly credits**,
+4. Go to **Holidays** and check this year's non-working holidays. **Every year**, when Malacañang
+   publishes the proclamation of next year's holidays, choose next year and **Add holiday** for each
+   date. Holidays are skipped when the working days of a leave are counted.
+5. Ask each signee (department heads, HRMO, mayor) to set their **e-signature** on **My Profile**.
+6. **Every month**, the HRMO posts the leave credits: **Employees & Accounts → Post monthly credits**,
    choose the month, check the list, and confirm. Posting the same month twice adds nothing.
 
 ## 6. Back up and restore
@@ -118,7 +122,25 @@ You can run `npm run setup` again at any time. It never deletes data and never r
   ```
   Choose the backup from the list and type `RESTORE` to confirm. Then start the system again.
 
-## 7. Update to a newer version
+## 7. I forgot the HRMO password
+
+If there is a second HRMO account, it can reset the password on **Employees & Accounts**. If not,
+reset it on the **server computer** (the one that runs the system):
+
+1. Make sure Docker Desktop is running. Open a **new** terminal window and go to the system folder
+   (as in section 3). The system itself may keep running in its own window.
+2. Type this, with the HRMO's username at the end (`hrmo` here), and press Enter:
+   ```
+   npm run reset-password -- hrmo
+   ```
+3. Type the new password (at least 8 characters) and press Enter, then type it again. **Nothing
+   appears on the screen while you type**; that is normal.
+4. It says *Password of ... was reset*. Sign in with the new password.
+
+The Audit Trail records that the password was reset from the server console. The same command works
+for any account. If it says *There is no account* or *deactivated*, check the username.
+
+## 8. Update to a newer version
 
 1. Stop the system (Ctrl+C) and make a backup: `npm run db:backup`
 2. Download the update and apply it:
@@ -129,7 +151,7 @@ You can run `npm run setup` again at any time. It never deletes data and never r
    ```
 3. Start it again: `npm run start:lan`
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Problem | What to do |
 |---|---|
@@ -140,9 +162,10 @@ You can run `npm run setup` again at any time. It never deletes data and never r
 | Other computers cannot open the system | Check that both are on the same Wi-Fi, use the IP address (not localhost), and allow Node.js in the Windows firewall (section 4). |
 | Logged in but sent back to the login page | Make sure `.env` does not contain `COOKIE_SECURE="true"` (only for HTTPS servers). |
 | An employee **forgot their password** | The HRMO opens **Employees & Accounts**, clicks the employee, types a new temporary password under **Reset password**, and tells the employee. The employee changes it on My Profile. |
-| The **HRMO forgot their password** | The mayor cannot reset it. If there is a second HRMO account, it can reset it. Otherwise call the developer. |
+| The **HRMO forgot their password** | See section 7: another HRMO resets it, or run `npm run reset-password -- <username>` on the server computer. |
 | *Error connecting to the database* in the browser | Docker Desktop or the database is not running: open Docker Desktop, run `docker compose up -d`, then start the system again. |
-| An employee cannot file leave: *has no department head yet* | The HRMO sets the head of that office in **Employees & Accounts → Office heads**. |
+| An employee cannot file leave: *has no department head yet* | The HRMO sets the head of that office in **Employees & Accounts → Offices**. |
+| A leave counts a holiday as a working day | The holiday is missing for that year. The HRMO adds it on **Holidays**. Leave already filed keeps its day count. |
 
 ---
 
@@ -176,7 +199,7 @@ prisma/schema.prisma        database tables            prisma/migrations/   sche
 prisma/seed.ts              demo data (dev)            prisma/seed-production.ts  real install start data
 prisma/seed-data.ts         offices, holidays, leave types shared by both seeds
 prisma/verify-engine.ts     self-check of the rules (npm run verify:engine)
-scripts/                    setup, wait-for-db, backup, restore (plain Node, work on Windows)
+scripts/                    setup, wait-for-db, backup, restore (plain Node), reset-password (tsx); all work on Windows
 src/app/                    pages ((app) = signed in, verify = public QR pages)
 src/server/                 server actions, auth guards, reports, employee rules
 src/server/leave/           leave rules: filing, eligibility, credits, workflow, accrual
@@ -205,6 +228,7 @@ docker-compose.yml          PostgreSQL 16 for local use
 | `db:reset` | **Deletes all data**, re-creates the tables and loads the demo seed |
 | `db:backup` / `db:restore` | Backup to / restore from `backups/*.sql` through `docker exec` |
 | `verify:engine` | Self-check of the leave rules on the demo data (rolled back; exit code 1 on failure) |
+| `reset-password` | `npm run reset-password -- <username>`: set a new password from the server console (hidden input, audit row with no actor) |
 
 **Settings (.env)**: see `.env.example`. `COOKIE_SECURE` controls the HTTPS-only cookie (off by default
 unless `APP_URL` starts with `https://`). On Render, set `APP_URL` to the https address.
