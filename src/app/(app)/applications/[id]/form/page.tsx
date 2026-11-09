@@ -12,8 +12,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import type { ActionStep } from "@/generated/prisma/client";
 import { APP, STATUS_LABELS } from "@/lib/constants";
 import { db } from "@/lib/db";
-import { fmtDate, fmtDateTime, fmtNum, fmtRange, peso } from "@/lib/format";
-import { CALENDAR_DAY_TYPES, type LeaveDetails } from "@/lib/leave-types";
+import { fmtDate, fmtDateTime, fmtNum, fmtRange, peso, pluralDays, upperName } from "@/lib/format";
+import { CALENDAR_DAY_TYPES, printedLegalBasis, type LeaveDetails } from "@/lib/leave-types";
 import { formName, fullName } from "@/lib/utils";
 import { canViewApplication } from "@/server/application-access";
 import { requireUser } from "@/server/auth";
@@ -69,7 +69,7 @@ export default async function Form6Page({ params }: { params: Promise<{ id: stri
   // Panel revision 6: when the HRMO encoded the leave, the FILED action holds the HRMO's
   // signature, not the applicant's, so the applicant's line stays blank to be signed by hand.
   const filedOnBehalf = app.filedById !== null && app.filedById !== app.employeeId;
-  const dayWord = CALENDAR_DAY_TYPES.includes(app.typeCode) ? "calendar day(s)" : "day(s)";
+  const daysText = pluralDays(app.days, CALENDAR_DAY_TYPES.includes(app.typeCode) ? "calendar" : "");
 
   return (
     <>
@@ -96,10 +96,10 @@ export default async function Form6Page({ params }: { params: Promise<{ id: stri
           <p>Republic of the Philippines</p>
           <p className="text-[12px] font-bold">{APP.agency.toUpperCase()}</p>
           <p>{APP.province}</p>
-          <h1 className="mt-4 text-lg font-bold tracking-wide">APPLICATION FOR LEAVE</h1>
+          <h1 className="mt-4 text-lg font-bold tracking-wide print:mt-2">APPLICATION FOR LEAVE</h1>
         </div>
 
-        <div className="mt-4 border border-black">
+        <div className="mt-4 border border-black print:mt-2">
           <div className="grid grid-cols-[1fr_2fr] border-b border-black">
             <div className="border-r border-black p-1.5">
               1. OFFICE/DEPARTMENT
@@ -107,7 +107,7 @@ export default async function Form6Page({ params }: { params: Promise<{ id: stri
             </div>
             <div className="p-1.5">
               2. NAME : <span className="text-[9px]">(Last) (First) (Middle)</span>
-              <p className="font-sans font-semibold">{formName(e)}</p>
+              <p className="font-sans font-semibold">{upperName(formName(e))}</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-x-6 gap-y-1 border-b-4 border-double border-black p-1.5">
@@ -126,14 +126,18 @@ export default async function Form6Page({ params }: { params: Promise<{ id: stri
           <div className="grid grid-cols-2 border-b border-black">
             <div className="border-r border-black p-1.5">
               <p className="mb-1">6.A TYPE OF LEAVE TO BE AVAILED OF</p>
-              {types.map((x) => (
-                <p key={x.code} className="flex text-[10px]">
-                  <Box on={x.code === app.typeCode} />
-                  <span>
-                    <b>{x.name}</b> <span className="text-[8.5px]">({x.legalBasis})</span>
-                  </span>
-                </p>
-              ))}
+              {types.map((x) => {
+                // A placeholder legal basis ("to be confirmed by HRMO") is not printed.
+                const basis = printedLegalBasis(x.legalBasis);
+                return (
+                  <p key={x.code} className="flex text-[10px]">
+                    <Box on={x.code === app.typeCode} />
+                    <span>
+                      <b>{x.name}</b> {basis && <span className="text-[8.5px]">({basis})</span>}
+                    </span>
+                  </p>
+                );
+              })}
               <p className="mt-1 text-[10px]">
                 Others: <Line className="min-w-32" />
               </p>
@@ -181,10 +185,8 @@ export default async function Form6Page({ params }: { params: Promise<{ id: stri
           <div className="grid grid-cols-2 border-b-4 border-double border-black">
             <div className="border-r border-black p-1.5">
               <p>6.C NUMBER OF WORKING DAYS APPLIED FOR</p>
-              <Line className="ml-4 mt-1">
-                {fmtNum(app.days)} {dayWord}
-              </Line>
-              <p className="ml-4 mt-2">INCLUSIVE DATES</p>
+              <Line className="ml-4 mt-1">{daysText}</Line>
+              <p className="ml-4 mt-2 print:mt-1">INCLUSIVE DATES</p>
               <Line className="ml-4 mt-1">{fmtRange(app.startDate, app.endDate)}</Line>
             </div>
             <div className="p-1.5">
@@ -270,7 +272,7 @@ export default async function Form6Page({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
-        <div className="mt-3 flex items-center justify-between gap-4 font-sans text-[9px] text-slate-600">
+        <div className="mt-3 flex items-center justify-between gap-4 font-sans text-[9px] text-slate-600 print:mt-1.5">
           <p>
             Generated by the {APP.name} {APP.subtitle}. To verify authenticity, scan the QR code or open{" "}
             <span className="font-mono">{verifyUrl}</span>.
@@ -302,14 +304,14 @@ function Line({ children, className = "" }: { children?: ReactNode; className?: 
  */
 function Sig({ name, title, signature, date }: { name: string; title: string; signature?: string | null; date?: Date | null }) {
   return (
-    <div className="mt-2 text-center">
+    <div className="mt-2 text-center print:mt-1">
       <div className="flex h-10 items-end justify-center">
         {signature && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={signature} alt={`Signature of ${name}`} className="max-h-10 max-w-[70%] object-contain" />
         )}
       </div>
-      <p className="border-b border-black font-sans text-[11px] font-bold uppercase">{name || " "}</p>
+      <p className="border-b border-black font-sans text-[11px] font-bold">{upperName(name) || " "}</p>
       <p className="text-[10px]">{title}</p>
       {date && <p className="font-sans text-[9px]">Date: {fmtDate(date)}</p>}
     </div>

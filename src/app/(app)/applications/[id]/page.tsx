@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { COMMUTATION_LABELS, isOpen, OPEN_STATUSES } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { todayInManila } from "@/lib/dates";
-import { fmtDate, fmtDateTime, fmtNum, fmtRange } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtNum, fmtRange, pluralDays } from "@/lib/format";
 import { CALENDAR_DAY_TYPES, type LeaveDetails } from "@/lib/leave-types";
 import { fullName } from "@/lib/utils";
 import { canViewApplication } from "@/server/application-access";
@@ -122,7 +122,7 @@ export default async function ApplicationPage({
             <ActionPanel
               applicationId={app.id}
               status={app.status as "FOR_RECOMMENDATION" | "FOR_CERTIFICATION" | "FOR_APPROVAL"}
-              summary={`${fullName(e)} · ${t.name} · ${fmtNum(app.days)} day(s) · ${fmtRange(app.startDate, app.endDate)}`}
+              summary={`${fullName(e)} · ${t.name} · ${pluralDays(app.days)} · ${fmtRange(app.startDate, app.endDate)}`}
               approvalNote={
                 app.status === "FOR_APPROVAL" && t.deductsFrom
                   ? `${fmtNum(app.days)} day(s) will be deducted from the employee's ${t.deductsFrom} balance, and a QR code will be generated for this application.`

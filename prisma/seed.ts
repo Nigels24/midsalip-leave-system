@@ -1,4 +1,8 @@
-// Seed: loads reference data and demo accounts (same as the prototype).
+// DEVELOPER-ONLY DEMO SEED. Never run it on the municipal server or any real database.
+// Loads reference data, 16 demo employees (password "demo123"), credits and signatures, the same as
+// the prototype. It exists for development and for `npm run verify:engine`, which needs this data.
+// The client's install (npm run setup, README client steps) uses prisma/seed-production.ts instead.
+// Demo accounts keep mustChangePassword false, so development is not interrupted.
 // Safe to run many times: every write is an upsert or is skipped if it already exists.
 //   npm run db:seed
 import "dotenv/config";
@@ -8,11 +12,12 @@ import { Prisma, type EmploymentStatus, type Role, type Sex } from "../src/gener
 import { db } from "../src/lib/db";
 import { MONTHLY_ACCRUAL } from "../src/lib/constants";
 import { CREDIT_EARNING_STATUSES } from "../src/lib/leave-types";
-import { DEMO_PASSWORD } from "../src/config/demo-accounts";
 import { toDbDate } from "../src/lib/dates";
 import { normalizeUsername } from "../src/lib/utils";
 import { OFFICES as BASE_OFFICES, seedHolidays, seedLeaveTypes } from "./seed-data";
 
+/** Password of every demo account (development only). */
+const DEMO_PASSWORD = "demo123";
 const OPENING_DATE = "2025-12-31";
 const OPENING_PARTICULARS = "Balance forwarded (leave card)";
 const ACCRUAL_MONTHS = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08"];

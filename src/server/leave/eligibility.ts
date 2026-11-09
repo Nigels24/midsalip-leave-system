@@ -4,6 +4,7 @@
 import type { Employee, LeaveType, Prisma } from "../../generated/prisma/client";
 import { EMPLOYMENT_STATUS_LABELS, OPEN_STATUSES } from "../../lib/constants";
 import { toDbDate, todayInManila, yearOf } from "../../lib/dates";
+import { pluralDays } from "../../lib/format";
 import { FEMALE_ONLY_TYPES, MALE_ONLY_TYPES } from "../../lib/leave-types";
 import { availableOf, credits, creditWord, ZERO, type Credits } from "./credits";
 import { LeaveError } from "./errors";
@@ -53,7 +54,7 @@ function buildOption(employee: EmployeeForRules, type: LeaveType, usedDays: Pris
     reason = `${type.name} is for male employees only.`;
   } else if (remainingDays !== null && remainingDays.lte(0)) {
     // Panel revision 3: once the yearly allowance is used up, the type cannot be chosen.
-    reason = `All ${type.maxDaysPerYear} day(s) of ${type.name} allowed for ${year} are already used or pending.`;
+    reason = `All ${pluralDays(type.maxDaysPerYear ?? 0)} of ${type.name} allowed for ${year} are already used or pending.`;
   } else if (type.deductsFrom && availableCredits !== null && availableCredits.lte(0)) {
     reason = `No ${creditWord(type.deductsFrom)} leave credits available.`;
   }
@@ -96,13 +97,13 @@ export async function validateEligibility(
 
   if (option.remainingDays !== null && days.gt(option.remainingDays)) {
     throw new LeaveError(
-      `${type.name} allows ${type.maxDaysPerYear} day(s) a year. Only ${option.remainingDays} day(s) are left for ${year}, but this application is for ${days} day(s).`,
+      `${type.name} allows ${pluralDays(type.maxDaysPerYear ?? 0)} a year. Only ${pluralDays(option.remainingDays)} left for ${year}, but this application is for ${pluralDays(days)}.`,
     );
   }
   if (type.deductsFrom && option.availableCredits !== null && days.gt(option.availableCredits)) {
     // Same wording as the prototype's validateFile.
     throw new LeaveError(
-      `Insufficient ${creditWord(type.deductsFrom)} leave credits. This application is for ${days} day(s) but only ${option.availableCredits} day(s) are available (balance less pending applications).`,
+      `Insufficient ${creditWord(type.deductsFrom)} leave credits. This application is for ${pluralDays(days)} but only ${pluralDays(option.availableCredits)} available (balance less pending applications).`,
     );
   }
 }

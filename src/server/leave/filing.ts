@@ -4,6 +4,7 @@ import { Prisma, type Commutation, type LeaveDetailKind } from "../../generated/
 import { OPEN_STATUSES } from "../../lib/constants";
 import { fromDbDate, isIsoDate, toDbDate, todayInManila, yearOf } from "../../lib/dates";
 import { countLeaveDays, LEAVE_LOCATIONS, SICK_WHERE, STUDY_PURPOSES } from "../../lib/leave-types";
+import { pluralDays } from "../../lib/format";
 import { makeRefNo } from "../../lib/refno";
 import { fullName } from "../../lib/utils";
 import { validateEligibility } from "./eligibility";
@@ -168,14 +169,14 @@ export async function fileLeave(client: DbClient, input: FileLeaveInput, actorId
       tx,
       [employee.id],
       "Application submitted",
-      `Your ${type.name} (${days} day/s) was submitted and is now ${status === "FOR_RECOMMENDATION" ? "with your department head" : "with the HRMO"}.${byLine}`,
+      `Your ${type.name} (${pluralDays(days)}) was submitted and is now ${status === "FOR_RECOMMENDATION" ? "with your department head" : "with the HRMO"}.${byLine}`,
       app.id,
     );
     await notify(
       tx,
       await actorsFor(tx, app),
       "New leave application",
-      `${fullName(employee)} filed ${type.name} for ${days} day(s). Awaiting your action.`,
+      `${fullName(employee)} filed ${type.name} for ${pluralDays(days)}. Awaiting your action.`,
       app.id,
     );
     await audit(

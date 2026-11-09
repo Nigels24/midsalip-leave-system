@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { COMMUTATION_LABELS } from "@/lib/constants";
-import { fmtDateLong, fmtNum, fmtRange } from "@/lib/format";
+import { fmtDateLong, fmtNum, fmtRange, pluralDays } from "@/lib/format";
 import { CALENDAR_DAY_TYPES, countLeaveDays, LEAVE_LOCATIONS, SICK_WHERE, STUDY_PURPOSES, type LeaveDetails } from "@/lib/leave-types";
 import { cn } from "@/lib/utils";
 import { fileLeaveAction } from "@/server/leave-actions";
@@ -169,7 +169,7 @@ export function ApplyForm({ applicant, onBehalf, options, credits: c, holidays, 
                         ? t.deductsFrom
                           ? `Limited by ${t.deductsFrom} credits`
                           : "No fixed yearly limit"
-                        : `${fmtNum(t.maxDaysPerYear)} day(s) · used ${fmtNum(t.usedDays)} · remaining ${fmtNum(t.remainingDays ?? 0)}`
+                        : `${pluralDays(t.maxDaysPerYear)} · used ${fmtNum(t.usedDays)} · remaining ${fmtNum(t.remainingDays ?? 0)}`
                     }
                   />
                   <Fact k="Convertible to cash" v={t.convertible ? "Yes (monetization / terminal leave)" : "No (non-convertible)"} />
@@ -298,13 +298,13 @@ export function ApplyForm({ applicant, onBehalf, options, credits: c, holidays, 
             {t && available !== null && days > 0 && (
               <div className={cn("mt-4 rounded-lg px-3 py-2 text-sm", days > available ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700")}>
                 {days > available
-                  ? `Not enough ${t.deductsFrom} credits for ${days} day(s).`
-                  : `After approval: ${fmtNum(available - days)} ${t.deductsFrom} day(s) left.`}
+                  ? `Not enough ${t.deductsFrom} credits for ${pluralDays(days)}.`
+                  : `After approval: ${pluralDays(available - days, t.deductsFrom ?? "")} left.`}
               </div>
             )}
             {t && t.remainingDays !== null && days > t.remainingDays && (
               <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-                {t.name} allows {fmtNum(t.maxDaysPerYear ?? 0)} day(s) a year; only {fmtNum(t.remainingDays)} day(s) are left.
+                {t.name} allows {pluralDays(t.maxDaysPerYear ?? 0)} a year; only {pluralDays(t.remainingDays)} left.
               </div>
             )}
             <div className="mt-5 flex gap-2 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">

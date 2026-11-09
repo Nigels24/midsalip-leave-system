@@ -7,6 +7,7 @@ import type { EmploymentStatus } from "@/generated/prisma/client";
 import { selectClass } from "@/components/list-controls";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/password-input";
 import { EMPLOYMENT_STATUS_LABELS, ROLE_LABELS } from "@/lib/constants";
 import { CREDIT_EARNING_STATUSES } from "@/lib/leave-types";
 import { createEmployeeAction, updateEmployeeAction, type FormState } from "@/server/employee-actions";
@@ -132,7 +133,7 @@ export function EmployeeForm({ employeeId, values, offices }: Props) {
       {isNew && (
         <>
           <Field label="Temporary password (at least 8 characters)">
-            <Input name="password" type="password" minLength={8} required autoComplete="new-password" />
+            <PasswordInput name="password" minLength={8} required autoComplete="new-password" />
           </Field>
           <div />
           {earns ? (

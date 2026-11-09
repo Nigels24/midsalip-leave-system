@@ -10,8 +10,10 @@ import { rolesFor } from "@/config/nav";
 import { OPEN_STATUSES } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { fromDbDate } from "@/lib/dates";
+import { fmtDateTime } from "@/lib/format";
 import { fullName } from "@/lib/utils";
 import { requireRole } from "@/server/auth";
+import { isLocked } from "@/server/login-rules";
 import { AccountPanel } from "./account-panel";
 import { EmployeeForm } from "../employee-form";
 
@@ -113,6 +115,8 @@ export default async function EditEmployeePage({ params, searchParams }: { param
               isSelf={e.id === user.id}
               heads={e.headOf?.name ?? null}
               openApplications={openApplications}
+              lockedUntil={e.lockedUntil && isLocked(e) ? fmtDateTime(e.lockedUntil) : null}
+              mustChangePassword={e.mustChangePassword}
             />
           </CardContent>
         </Card>

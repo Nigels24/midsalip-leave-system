@@ -1,7 +1,7 @@
 // Self-check of the leave rules in src/server/leave against the seeded database.
 //   npm run verify:engine
 // Everything runs inside ONE transaction that is rolled back at the end,
-// so the database is left exactly as it was. Needs the seed data (npm run db:seed).
+// so the database is left exactly as it was. Needs the DEMO seed data (npm run db:seed, developer only).
 import "dotenv/config";
 import { Prisma, type Sex, type EmploymentStatus } from "../src/generated/prisma/client";
 import { db } from "../src/lib/db";
@@ -23,7 +23,8 @@ import {
 } from "../src/server/leave";
 import { addHoliday, deleteHoliday, updateHoliday } from "../src/server/holiday-rules";
 import { createOffice, officeSchema, updateOffice } from "../src/server/office-rules";
-import { createEmployee, newEmployeeSchema, setEmployeeActive, setOfficeHead } from "../src/server/employee-rules";
+import { changeOwnPassword, createEmployee, newEmployeeSchema, resetPassword, setEmployeeActive, setOfficeHead, unlockAccount } from "../src/server/employee-rules";
+import { checkLogin, isLocked, LOCK_MINUTES, LOGIN_ERROR, MAX_FAILED_LOGINS } from "../src/server/login-rules";
 import { OPEN_STATUSES } from "../src/lib/constants";
 import { checkSignatureDataUrl } from "../src/lib/signature";
 import { leaveOnDay, monthGrid, parseMonth, shiftMonth } from "../src/lib/calendar";
@@ -266,7 +267,9 @@ async function scenarios(tx: Tx) {
     await rejects("an employee with open applications cannot be deactivated", () => setEmployeeActive(tx, permFemale.id, false, hrmo.id), "open application");
   }
   await rejects("a head must belong to the office", () => setOfficeHead(tx, "MEO", jpepito.id, hrmo.id), "does not belong");
-  const duplicate = newEmployeeSchema.parse({
+  // What the HRMO's Add employee form sends: every value is a string (empty = not filled in).
+  // Parse it with newEmployeeSchema each time; never feed parsed output (null, Decimal) back in.
+  const employeeForm = {
     employeeNo: "VERIFY-DUP",
     firstName: "Dup",
     middleInitial: "",
@@ -283,7 +286,8 @@ async function scenarios(tx: Tx) {
     password: "temporary-123",
     openingVL: "",
     openingSL: "",
-  });
+  };
+  const duplicate = newEmployeeSchema.parse(employeeForm);
   await rejects("a duplicate username is refused (any case)", () => createEmployee(tx, duplicate, hrmo.id), "already taken");
 
   console.log("\nt) Office without a head (fresh install)");
@@ -344,6 +348,64 @@ async function scenarios(tx: Tx) {
   check("its waiting leave still goes to the same head", await canAct(tx, appT, newHead.id));
   await updateOffice(tx, "VRFY-2", officeSchema.parse({ code: "VRFY-2", name: "verify office renamed" }), hrmo.id);
   check("an office may change only the letter case of its own name", (await tx.office.findUnique({ where: { id: "VRFY-2" } }))?.name === "verify office renamed");
+
+  console.log("\nv) Sign-in lockout and forced password change");
+  const PASS = "verify-pass-1";
+  const loginId = await createEmployee(
+    tx,
+    newEmployeeSchema.parse({
+      ...employeeForm,
+      employeeNo: "VERIFY-LOGIN",
+      firstName: "Login",
+      lastName: "Tester",
+      monthlySalary: "20000",
+      openingVL: "10",
+      openingSL: "10",
+      username: "verify-login",
+      password: PASS,
+    }),
+    hrmo.id,
+  );
+  const account = () => tx.employee.findUniqueOrThrow({ where: { id: loginId }, select: { mustChangePassword: true, failedLoginCount: true, lockedUntil: true } });
+  check("a new account must change its password", (await account()).mustChangePassword);
+
+  const login = (password: string, username = "verify-login", now?: Date) => checkLogin(tx, username, password, now);
+  const message = (result: Awaited<ReturnType<typeof checkLogin>>) => (result.ok ? "signed in" : result.error);
+  const first = await login("wrong-1");
+  check("a wrong password gives the generic message", message(first) === LOGIN_ERROR, message(first));
+  check("an unknown username gives the same message", message(await login("wrong-1", "verify-nobody")) === message(first));
+  for (let i = 2; i < MAX_FAILED_LOGINS; i++) await login(`wrong-${i}`);
+  check(`${MAX_FAILED_LOGINS - 1} wrong passwords do not lock yet`, !isLocked(await account()), `count ${(await account()).failedLoginCount}`);
+  const fifth = await login("wrong-5");
+  check(`the ${MAX_FAILED_LOGINS}th wrong password locks the account`, isLocked(await account()) && message(fifth).includes("Too many attempts"), message(fifth));
+  check(`locked for ${LOCK_MINUTES} minutes`, message(fifth).includes(`${LOCK_MINUTES} minutes`), message(fifth));
+  const lockAudit = await tx.auditLog.findFirst({ where: { action: "LOGIN_LOCKED", detail: "Login Tester" } });
+  check("the lock writes a LOGIN_LOCKED audit row with no actor and the name only", lockAudit?.actorId === null, lockAudit?.detail ?? "no row");
+  const whileLocked = await login(PASS);
+  check("the correct password is refused while locked", !whileLocked.ok && message(whileLocked).includes("Too many attempts"), message(whileLocked));
+
+  const later = new Date(Date.now() + (LOCK_MINUTES + 1) * 60_000);
+  const afterLock = await login(PASS, "verify-login", later);
+  const unlocked = await account();
+  check("after the lock expires the correct password works", afterLock.ok, message(afterLock));
+  check("a successful sign-in resets the counter and clears the lock", unlocked.failedLoginCount === 0 && unlocked.lockedUntil === null);
+  check("the sign-in reports that the password must be changed", afterLock.ok && afterLock.mustChangePassword);
+
+  for (let i = 1; i <= MAX_FAILED_LOGINS; i++) await login(`wrong-${i}`);
+  await unlockAccount(tx, loginId, hrmo.id);
+  check("the HRMO can unlock early", !isLocked(await account()) && (await login(PASS)).ok);
+  await rejects("unlocking an account that is not locked is refused", () => unlockAccount(tx, loginId, hrmo.id), "not locked");
+
+  await changeOwnPassword(tx, loginId, PASS, "verify-pass-2");
+  check("changing your own password clears the flag", !(await account()).mustChangePassword);
+  await rejects("the same password again is refused", () => changeOwnPassword(tx, loginId, "verify-pass-2", "verify-pass-2"), "must be different");
+
+  for (let i = 1; i <= MAX_FAILED_LOGINS; i++) await login(`wrong-${i}`);
+  await resetPassword(tx, loginId, "verify-pass-3", hrmo.id);
+  const afterReset = await account();
+  check("an HRMO reset sets the flag again", afterReset.mustChangePassword);
+  check("an HRMO reset also unlocks the account", afterReset.lockedUntil === null && afterReset.failedLoginCount === 0);
+  check("the reset password signs in", (await login("verify-pass-3")).ok);
 }
 
 /** o) The e-signature validator (pure function, no database). */

@@ -1,27 +1,33 @@
 # MMH Leave: end-to-end test checklist
 
 For the developer, before the defense and before handing over to the municipal hall.
-Sections A to P use the **demo data** (`npm run db:reset`, or `npm run db:seed` on an empty database),
-`SHOW_DEMO_ACCOUNTS="true"` in `.env`, and the password **`demo123`** for every account.
-Section Q is the fresh install test with the **production** setup.
+Sections A to P use the **demo data** (see "Developer test data" below). Section Q
+use a **production-style** database (no demo data), as the client gets it.
+The login page never lists accounts: type the username and password yourself.
 
 Run first, all must pass:
 
 ```
 npm run lint
 npm run build
-npm run verify:engine        # scenarios a to u, "All checks passed."
+npm run verify:engine        # scenarios a to v, "All checks passed."
 ```
 
-Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer` (head of MTO),
+### Developer test data (developers only, never on the municipal server)
+
+`npm run db:reset` (or `npm run db:seed` on an empty database) loads the developer-only demo seed
+`prisma/seed.ts`. Every demo account has the password **`demo123`** and does not have to change it.
+Accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer` (head of MTO),
 `hrmo` (HRMO, also heads HRMO), `mayor` (Approving Authority, heads MO), `psumalpong` (casual).
 
 ---
 
 ## A. Login and access (all roles)
 
-- [ ] Wrong username or wrong password both show the same "Invalid username or password".
+- [ ] Wrong username or wrong password both show the same "Incorrect username or password".
+- [ ] The login page shows no demo accounts, no demo password and no demo username hint.
 - [ ] Username is case-insensitive (`JPepito` works).
+- [ ] The eye button on the password shows and hides it, the cursor stays in the box, and clicking it does not submit the form. After a refused sign-in the username stays in its box.
 - [ ] Each role sees only its own sidebar items:
   - employee: Dashboard, File Leave, My Applications, Leave Credits, Leave Calendar, Notifications, My Profile, Verify;
   - department head: also For My Action and Leave Records;
@@ -31,6 +37,22 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 - [ ] Signed out, any page goes to `/login`; `/verify` stays public.
 - [ ] Sign out works, and a deactivated account is signed out on its next click.
 - [ ] Opened from another computer by the LAN IP with `npm run start:lan`: login stays (cookie not Secure on http).
+
+## A2. Account security (lockout and forced password change)
+
+On the demo data, with a throwaway employee the HRMO adds (e.g. username `locktest`):
+
+- [ ] `hrmo` adds `locktest` with a temporary password. Sign in as `locktest`: you land on **Choose your own password**, with no sidebar.
+- [ ] While there, typing `/dashboard`, `/apply`, `/profile` or `/` in the address bar brings you back to `/change-password`. Sign out works.
+- [ ] A wrong current password, a short or mismatched new one, and the same password as the temporary one are refused. A valid change opens the dashboard; the next sign-in goes straight to the dashboard.
+- [ ] Sign out and type a wrong password 4 times: "Incorrect username or password". The 5th: "Too many attempts. Try again in 15 minutes."
+- [ ] While locked, the correct password is refused with the same "Too many attempts" message (the minutes count down).
+- [ ] An unknown username with any password, any number of times, only ever says "Incorrect username or password".
+- [ ] Audit Trail: a LOGIN LOCKED row with no actor and only the employee's name.
+- [ ] `hrmo` opens `locktest` on Employees & Accounts: an amber "Locked ... until ..." box with **Unlock account**. Unlock: the box disappears, an UNLOCK ACCOUNT audit row is written, and `locktest` can sign in at once.
+- [ ] Lock it again, then **Reset password** instead: it is unlocked, and the next sign-in asks for a new password again.
+- [ ] Wait out a lock (15 minutes): the correct password works and the count starts again from zero.
+- [ ] My Profile → Change password still works for a normal account and shows "Your password was changed."
 
 ## B. File Leave (employee, HRMO on behalf)
 
@@ -70,11 +92,14 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 - [ ] Remove signature asks for confirmation.
 - [ ] After changing a signature, older approved forms keep the old signature (snapshot).
 - [ ] Change password: a wrong current password is refused, a short or mismatched new one is refused, and a valid change works for the next login.
+- [ ] Each of the three password boxes has its own eye button. After a successful change all three are empty and hidden again.
 
 ## G. CS Form No. 6, QR code and phone scan
 
 - [ ] An approved application shows the Form 6 button and the QR card; pending ones don't.
 - [ ] Form 6 has all sections filled, each signee's signature above their name with the date, and the QR in the corner.
+- [ ] Item 2 prints the whole name in capitals ("PEPITO, JOANNA R."), the same as the signature lines. 6.C reads "1 day" / "2 days" ("calendar days" for ML and SLBW).
+- [ ] In 6.A, Wellness Leave shows its name only (no "to be confirmed by HRMO" text). File Leave and the application page still show its legal-basis note.
 - [ ] Filed by the HRMO on behalf: the applicant's signature line is blank, with an "Encoded by" note.
 - [ ] Print / Save as PDF fits one A4 page and one Letter page, with no sidebar or buttons.
 - [ ] With the app opened by LAN IP, scan the QR with a phone that isn't logged in. You get the green "Authentic and approved" page with only the minimum details.
@@ -105,6 +130,7 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 - [ ] Unread rows are tinted, and the sidebar and bell badges show the count.
 - [ ] Mark as read, Open application (marks it read) and Mark all as read all lower the badge.
 - [ ] The Unread-only view and the pager work.
+- [ ] A 1-day leave reads "(1 day)" and a 2-day leave "(2 days)" in the notifications; no "day/s" or "day(s)" anywhere (dashboard, File Leave warnings, error messages).
 
 ## L. Employees and Accounts (HRMO)
 
@@ -116,7 +142,7 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 - [ ] Moving or deactivating an office head is refused.
 - [ ] Deactivating yourself, the last HRMO or the last mayor, or an employee with open applications, is refused.
 - [ ] Reactivate works.
-- [ ] Reset password: the new temporary password works and nothing is shown back.
+- [ ] Reset password: the new temporary password works and nothing is shown back. Both boxes have an eye button, and they are empty and hidden again after the reset. Add employee's temporary password has one too.
 - [ ] Offices: set a new head; an Employee becomes a Department Head, and waiting recommendations move to the new head.
 - [ ] Add office "Office of the Municipal Agriculturist", code `mao`: it shows as `MAO` with "No head yet". A code `mto` or the name "office of the municipal treasurer" (any case) is refused.
 - [ ] Add an employee to MAO and try to file leave as them: refused ("no department head yet"). Set the head, file again: it works.
@@ -163,7 +189,8 @@ Demo accounts used below: `jpepito`, `mdizon`, `klumbay` (employees), `treasurer
 ## P2. Password recovery from the server console
 
 - [ ] `npm run reset-password -- hrmo`: typing shows nothing; a password shorter than 8 characters or two different entries are refused with "Nothing was changed".
-- [ ] With matching entries it prints "Password of ... was reset" (never the password); `hrmo` logs in with it, and the Audit Trail has a RESET PASSWORD row "... was reset from the server console" with no actor.
+- [ ] With matching entries it prints "Password of ... was reset" (never the password); `hrmo` logs in with it and must then choose a new password, and the Audit Trail has a RESET PASSWORD row "... was reset from the server console" with no actor.
+- [ ] On a locked account it also lifts the lock.
 - [ ] `npm run reset-password -- nobody` and a deactivated username print a clear message and exit with an error (`echo $?` / `echo %errorlevel%` is 1). Without a username it prints the usage.
 - [ ] Ctrl+C at the prompt cancels without changing anything.
 - [ ] Works in Windows Command Prompt / PowerShell as well as macOS/Linux Terminal.
@@ -198,11 +225,11 @@ Uses a second database on port **5434** so your development database is not touc
    - [ ] Setup prints "Production seed complete": 7 offices (2 with a head), 14 leave types, 16 holidays, 2 employees, and the starter password.
    - [ ] Running `npm run setup` again succeeds and says the starter accounts already exist.
    - [ ] Rename an office and delete one 2026 holiday, then run `npm run setup` again: the old office and the holiday do not come back.
-   - [ ] The login page shows no demo accounts. `hrmo` and `mayor` log in with the printed password.
+   - [ ] The login page shows no demo accounts. `hrmo` and `mayor` log in with the printed password and are sent to **Choose your own password** before anything else.
    - [ ] Dashboard, Records, Calendar, Reports and Audit are empty but work. The audit log has a `SETUP` row.
    - [ ] Section L: rename the starter accounts, add an employee in MTO, try to file as them (refused: no head), set the MTO head, file again (works).
    - [ ] Section M: post the current month for the new employee.
-   - [ ] Change both starter passwords, delete `SEED_ADMIN_PASSWORD` from `.env`, run `npm run setup` again: still succeeds.
+   - [ ] After both starter passwords are changed, delete `SEED_ADMIN_PASSWORD` from `.env`, run `npm run setup` again: still succeeds, and nobody is asked to change the password again.
    - [ ] Section P (backup and restore) on this database.
    - [ ] From a phone on the same Wi-Fi: log in by the LAN IP, then scan a Form 6 QR while logged out.
 5. Clean up:

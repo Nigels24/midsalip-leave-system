@@ -136,6 +136,15 @@ export const FEMALE_ONLY_TYPES = ["ML", "SLBW", "VAWC"];
 export const MALE_ONLY_TYPES = ["PL"];
 
 /**
+ * The legal basis as printed on CS Form 6: empty while it is still a "to be confirmed by HRMO"
+ * placeholder (Wellness Leave for now), so the paper shows only the leave name.
+ * The app screens (File Leave, application detail) keep showing the full note.
+ */
+export function printedLegalBasis(legalBasis: string) {
+  return legalBasis.includes(CONFIRM) ? "" : legalBasis;
+}
+
+/**
  * The number of days a leave uses: calendar days for ML and SLBW,
  * otherwise working days (weekends and the given holidays are skipped).
  */

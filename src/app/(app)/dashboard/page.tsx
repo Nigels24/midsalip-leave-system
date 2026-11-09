@@ -15,7 +15,7 @@ import { NAV, rolesFor } from "@/config/nav";
 import { OPEN_STATUSES, ROLE_LABELS, STATUS_LABELS } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { toDbDate, todayInManila, yearOf } from "@/lib/dates";
-import { fmtDate, fmtNum, fmtRange, fmtToday, greeting } from "@/lib/format";
+import { fmtDate, fmtRange, fmtToday, greeting, pluralDays } from "@/lib/format";
 import { fullName } from "@/lib/utils";
 import { requireRole } from "@/server/auth";
 import { credits, waitingForWhere } from "@/server/leave";
@@ -124,7 +124,7 @@ export default async function DashboardPage() {
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-slate-800">{fullName(a.employee)}</p>
                           <p className="truncate text-xs text-slate-500">
-                            {a.leaveType.name} · {fmtNum(a.days)} day(s) · {fmtRange(a.startDate, a.endDate)}
+                            {a.leaveType.name} · {pluralDays(a.days)} · {fmtRange(a.startDate, a.endDate)}
                           </p>
                         </div>
                         <span className="hidden text-xs text-slate-400 sm:block">Filed {fmtDate(a.filedAt)}</span>
@@ -178,7 +178,7 @@ export default async function DashboardPage() {
                   <div>
                     <p className="text-sm font-medium text-slate-800">{a.leaveType.name}</p>
                     <p className="text-xs text-slate-500">
-                      {fmtRange(a.startDate, a.endDate)} · {fmtNum(a.days)} day(s) · <span className="font-mono">{a.refNo}</span>
+                      {fmtRange(a.startDate, a.endDate)} · {pluralDays(a.days)} · <span className="font-mono">{a.refNo}</span>
                     </p>
                   </div>
                   <StatusBadge status={a.status} />

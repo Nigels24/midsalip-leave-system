@@ -105,6 +105,10 @@ model Employee {
   signature           String?          @db.Text
   signatureUpdatedAt  DateTime?
   active              Boolean          @default(true)
+  // Account security (src/server/login-rules.ts). A new or reset account must change its password first.
+  mustChangePassword  Boolean          @default(false)
+  failedLoginCount    Int              @default(0) // wrong passwords in a row; 5 locks the account
+  lockedUntil         DateTime? // no sign-in before this moment (15 minutes after the 5th wrong password)
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
 

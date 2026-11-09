@@ -42,5 +42,5 @@ console.log("Then: npm run start:lan   and open http://localhost:3000\n");
 if (process.env.SEED_ADMIN_PASSWORD) {
   console.log("Starter accounts: hrmo and mayor");
   console.log(`First password:   ${process.env.SEED_ADMIN_PASSWORD}`);
-  console.log("Sign in, change both passwords on My Profile, then delete the SEED_ADMIN_PASSWORD line from .env.\n");
+  console.log("Sign in as each account: the system asks for a new password first. Then delete the SEED_ADMIN_PASSWORD line from .env.\n");
 }

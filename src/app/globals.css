@@ -123,13 +123,14 @@
 
 /* Printing CS Form No. 6 (/applications/[id]/form) and the leave card (/credits). The app shell's sidebar, header and the
    buttons carry Tailwind's print:hidden, so only the form itself reaches the paper.
-   No paper size is set, so the same one-page form fits both A4 and Letter. */
+   No paper size is set, so the same one-page form fits both A4 and Letter (Letter is the shorter page, so it is the
+   one to check). Keep the margin and the form's print: spacing small so the form never spills onto a second page. */
 .shade {
   background: #f1f5f9; /* light grey band behind the section titles */
 }
 @media print {
   @page {
-    margin: 10mm;
+    margin: 8mm;
   }
   body {
     background: #fff;

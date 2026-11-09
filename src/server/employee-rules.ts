@@ -9,6 +9,11 @@
 //  3. An office head cannot be deactivated or moved to another office until another head is set.
 //  4. An employee with open applications cannot be deactivated.
 // Every change writes an AuditLog row. Passwords and hashes never go into the log.
+//
+// Passwords: a new account and every reset (by the HRMO or from the server console) set
+// mustChangePassword, so the person picks their own password at the next sign-in (requireUser()
+// in src/server/auth.ts sends them to /change-password). Only changeOwnPassword() clears it.
+// A reset also unlocks the account (see src/server/login-rules.ts).
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { Prisma, type EmploymentStatus, type Role } from "../generated/prisma/client";
@@ -17,6 +22,7 @@ import { isIsoDate, toDbDate, todayInManila } from "../lib/dates";
 import { CREDIT_EARNING_STATUSES } from "../lib/leave-types";
 import { fullName, normalizeUsername } from "../lib/utils";
 import { LeaveError } from "./leave/errors";
+import { isLocked } from "./login-rules";
 import { audit, inTransaction, type DbClient } from "./leave/shared";
 
 /** Same cost as the seed, so all hashes are alike. */
@@ -126,7 +132,12 @@ export async function createEmployee(client: DbClient, input: NewEmployee, actor
 
     const { password, openingVL, openingSL, originalAppointment, ...fields } = input;
     const employee = await tx.employee.create({
-      data: { ...fields, originalAppointment: toDbDate(originalAppointment), passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS) },
+      data: {
+        ...fields,
+        originalAppointment: toDbDate(originalAppointment),
+        passwordHash: await bcrypt.hash(password, BCRYPT_ROUNDS),
+        mustChangePassword: true, // the HRMO knows this temporary password
+      },
       select: { id: true, firstName: true, middleInitial: true, lastName: true, username: true },
     });
 
@@ -202,11 +213,19 @@ export async function setEmployeeActive(client: DbClient, id: string, active: bo
 
 // ── Passwords ────────────────────────────────────────────────
 
+/** A new password set by someone else: it must be changed at the next sign-in, and any lock is lifted. */
+const resetData = async (newPassword: string) => ({
+  passwordHash: await bcrypt.hash(newPassword, BCRYPT_ROUNDS),
+  mustChangePassword: true,
+  failedLoginCount: 0,
+  lockedUntil: null,
+});
+
 /** The HRMO sets a new temporary password. It is stored hashed and never shown again. */
 export async function resetPassword(client: DbClient, id: string, newPassword: string, actorId: string) {
   return inTransaction(client, async (tx) => {
     const employee = await loadEmployee(tx, id);
-    await tx.employee.update({ where: { id }, data: { passwordHash: await bcrypt.hash(newPassword, BCRYPT_ROUNDS) } });
+    await tx.employee.update({ where: { id }, data: await resetData(newPassword) });
     await audit(tx, actorId, "RESET_PASSWORD", `Password of ${fullName(employee)} (${employee.username}) was reset`);
   });
 }
@@ -227,20 +246,37 @@ export async function resetPasswordFromConsole(client: DbClient, username: strin
     if (!employee) throw new LeaveError(`There is no account with the username "${normalizeUsername(username)}".`);
     if (!employee.active) throw new LeaveError(`The account "${employee.username}" is deactivated. Reactivate it first (another HRMO can do it on Employees & Accounts).`);
 
-    await tx.employee.update({ where: { id: employee.id }, data: { passwordHash: await bcrypt.hash(password.data, BCRYPT_ROUNDS) } });
+    await tx.employee.update({ where: { id: employee.id }, data: await resetData(password.data) });
     await audit(tx, null, "RESET_PASSWORD", `Password of ${fullName(employee)} was reset from the server console`);
     return fullName(employee);
   });
 }
 
-/** Any user changes their own password; the current one must be right. */
+/**
+ * Any user changes their own password; the current one must be right and the new one different.
+ * This is the only place that clears mustChangePassword.
+ */
 export async function changeOwnPassword(client: DbClient, userId: string, currentPassword: string, newPassword: string) {
   return inTransaction(client, async (tx) => {
     const me = await tx.employee.findUnique({ where: { id: userId }, select: { username: true, passwordHash: true } });
     if (!me || !(await bcrypt.compare(currentPassword, me.passwordHash))) throw new LeaveError("Your current password is not correct.");
     if (currentPassword === newPassword) throw new LeaveError("The new password must be different from the current one.");
-    await tx.employee.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(newPassword, BCRYPT_ROUNDS) } });
+    await tx.employee.update({
+      where: { id: userId },
+      data: { passwordHash: await bcrypt.hash(newPassword, BCRYPT_ROUNDS), mustChangePassword: false },
+    });
     await audit(tx, userId, "CHANGE_PASSWORD", `${me.username} changed their password`);
+  });
+}
+
+/** The HRMO lifts a sign-in lock before the 15 minutes are over (login-rules.ts). */
+export async function unlockAccount(client: DbClient, id: string, actorId: string) {
+  return inTransaction(client, async (tx) => {
+    const employee = await loadEmployee(tx, id);
+    const lock = await tx.employee.findUniqueOrThrow({ where: { id }, select: { lockedUntil: true } });
+    if (!isLocked(lock)) throw new LeaveError(`The account of ${fullName(employee)} is not locked.`);
+    await tx.employee.update({ where: { id }, data: { failedLoginCount: 0, lockedUntil: null } });
+    await audit(tx, actorId, "UNLOCK_ACCOUNT", `${fullName(employee)} (${employee.username}) was unlocked`);
   });
 }
 

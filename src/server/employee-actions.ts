@@ -17,6 +17,7 @@ import {
   resetPassword,
   setEmployeeActive,
   setOfficeHead,
+  unlockAccount,
   updateEmployee,
 } from "./employee-rules";
 import { LeaveError, postAccrual } from "./leave";
@@ -95,6 +96,11 @@ export async function resetPasswordAction(id: string, _prev: FormState, formData
   if (!parsed.success) return { error: firstIssue(parsed.error) };
   if (parsed.data !== text(formData, "confirm")) return { error: "The two passwords do not match." };
   return run(() => resetPassword(db, idSchema.parse(id), parsed.data, user.id), "Password reset. Give the new temporary password to the employee.");
+}
+
+export async function unlockAccountAction(id: string): Promise<FormState> {
+  const user = await hrmoOnly();
+  return run(() => unlockAccount(db, idSchema.parse(id), user.id), "Account unlocked. The employee can sign in again.");
 }
 
 export async function setOfficeHeadAction(officeId: string, _prev: FormState, formData: FormData): Promise<FormState> {

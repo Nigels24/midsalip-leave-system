@@ -89,14 +89,14 @@ You can run `npm run setup` again at any time. It never deletes data and never r
 ## 5. First login: what to do first
 
 1. Sign in as **`hrmo`** with the first password from step 2.4.
-2. Go to **My Profile** and **change the password**. Do the same for **`mayor`** (sign in as `mayor`).
-   Then open the `.env` file in the system folder with Notepad and delete the line that starts with
+2. The system asks for a **new password** right away: type the first password once more, then your
+   new password twice. Do the same for **`mayor`** (sign in as `mayor`). Then open the `.env` file in the system folder with Notepad and delete the line that starts with
    `SEED_ADMIN_PASSWORD`.
 3. Go to **Employees & Accounts**:
    - Open the two starter accounts ("Starter HRMO" and "Starter Mayor") and enter the **real names**,
      sex, position, salary grade and date of appointment.
-   - **Add every employee** (Add employee). Give each one a temporary password; they can change it on
-     My Profile. Enter their opening VL and SL balances from the paper leave card.
+   - **Add every employee** (Add employee). Give each one a temporary password. At their first sign-in the
+     system makes them choose their own password. Enter their opening VL and SL balances from the paper leave card.
    - In **Offices**, check the office names. **Add office** for any office that is missing, or
      **Rename** one. Then set the **head of each office**. Employees of an office without a head cannot
      file leave yet.
@@ -135,7 +135,8 @@ reset it on the **server computer** (the one that runs the system):
    ```
 3. Type the new password (at least 8 characters) and press Enter, then type it again. **Nothing
    appears on the screen while you type**; that is normal.
-4. It says *Password of ... was reset*. Sign in with the new password.
+4. It says *Password of ... was reset*. Sign in with the new password; the system then asks you to
+   choose another one. The reset also lifts a sign-in lock.
 
 The Audit Trail records that the password was reset from the server console. The same command works
 for any account. If it says *There is no account* or *deactivated*, check the username.
@@ -161,7 +162,8 @@ for any account. If it says *There is no account* or *deactivated*, check the us
 | *Port 3000 is already in use* (system) | The system is probably already running in another window. Close it, or restart the computer. |
 | Other computers cannot open the system | Check that both are on the same Wi-Fi, use the IP address (not localhost), and allow Node.js in the Windows firewall (section 4). |
 | Logged in but sent back to the login page | Make sure `.env` does not contain `COOKIE_SECURE="true"` (only for HTTPS servers). |
-| An employee **forgot their password** | The HRMO opens **Employees & Accounts**, clicks the employee, types a new temporary password under **Reset password**, and tells the employee. The employee changes it on My Profile. |
+| An employee **forgot their password** | The HRMO opens **Employees & Accounts**, clicks the employee, types a new temporary password under **Reset password**, and tells the employee. At the next sign-in the employee must choose a new password. |
+| *Too many attempts. Try again in ... minutes* | After 5 wrong passwords in a row an account is locked for 15 minutes. Wait, or ask the HRMO: on **Employees & Accounts**, open the employee and click **Unlock account** (or reset the password). |
 | The **HRMO forgot their password** | See section 7: another HRMO resets it, or run `npm run reset-password -- <username>` on the server computer. |
 | *Error connecting to the database* in the browser | Docker Desktop or the database is not running: open Docker Desktop, run `docker compose up -d`, then start the system again. |
 | An employee cannot file leave: *has no department head yet* | The HRMO sets the head of that office in **Employees & Accounts → Offices**. |
@@ -175,28 +177,42 @@ for any account. If it says *There is no account* or *deactivated*, check the us
 Tailwind CSS 4, shadcn/ui, `qrcode`, custom session (`jose` + `bcryptjs`, no next-auth), zod.
 Read **CLAUDE.md** for the rules of the codebase. The full browser test plan is **docs/TEST-CHECKLIST.md**.
 
-**Development with demo data** (password `demo123` for every demo account):
+**Development with demo data (developers only).** `prisma/seed.ts` is a developer-only demo seed:
+16 demo employees, password `demo123` for every one, credits and signatures. `npm run verify:engine`
+needs it. Nothing the client runs uses it: `npm run setup` and the client steps above load only
+`prisma/seed-production.ts`. Never run `db:seed` or `db:reset` on the municipal server. The login page
+does not list any account; sign in by typing a demo username (e.g. `hrmo`, `jpepito`).
 
 ```
 docker compose up -d
 npm install
-npm run setup:env        # then in .env: SHOW_DEMO_ACCOUNTS="true"
+npm run setup:env
 npm run db:deploy        # create the tables
 npm run db:generate
-npm run db:seed          # 16 demo employees, credits, signatures (NOT the production seed)
+npm run db:seed          # demo data (NOT the production seed)
 npm run dev              # http://localhost:3000
 ```
 
 Use either the demo seed or the production seed on a database, never both: both create the
 usernames `hrmo` and `mayor` (with different employee numbers), so the demo seed stops with a
 "unique constraint" error on a production database and changes nothing there.
-`npm run db:reset` deletes everything and loads only the demo data.
+`npm run db:reset` deletes everything and loads only the demo data (developers only).
+
+**A clean production-style database on your own computer** (to test with real accounts, no demo data):
+
+```
+npx prisma migrate reset --force   # deletes everything and re-creates the tables; Prisma 7 does not seed here
+npm run db:seed:production         # offices, leave types, holidays, starter accounts hrmo and mayor
+```
+
+The starter password is `SEED_ADMIN_PASSWORD` in `.env`. Do not use `npm run db:reset` for this: it
+adds `prisma db seed`, which is the demo seed.
 
 **Folders**
 
 ```
 prisma/schema.prisma        database tables            prisma/migrations/   schema history
-prisma/seed.ts              demo data (dev)            prisma/seed-production.ts  real install start data
+prisma/seed.ts              demo data (developers only) prisma/seed-production.ts  real install start data
 prisma/seed-data.ts         offices, holidays, leave types shared by both seeds
 prisma/verify-engine.ts     self-check of the rules (npm run verify:engine)
 scripts/                    setup, wait-for-db, backup, restore (plain Node), reset-password (tsx); all work on Windows
@@ -223,9 +239,9 @@ docker-compose.yml          PostgreSQL 16 for local use
 | `db:generate` | Regenerate the Prisma client |
 | `db:migrate` | Create/apply a migration in development (`prisma migrate dev`) |
 | `db:deploy` | Apply migrations without prompts (`prisma migrate deploy`), as used by setup |
-| `db:seed` | Demo seed (development only) |
+| `db:seed` | Demo seed (developers only, never on the municipal server) |
 | `db:seed:production` | Production seed (offices, leave types, holidays, starter accounts) |
-| `db:reset` | **Deletes all data**, re-creates the tables and loads the demo seed |
+| `db:reset` | **Deletes all data**, re-creates the tables and loads the demo seed (developers only) |
 | `db:backup` / `db:restore` | Backup to / restore from `backups/*.sql` through `docker exec` |
 | `verify:engine` | Self-check of the leave rules on the demo data (rolled back; exit code 1 on failure) |
 | `reset-password` | `npm run reset-password -- <username>`: set a new password from the server console (hidden input, audit row with no actor) |

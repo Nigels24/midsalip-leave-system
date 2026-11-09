@@ -25,7 +25,7 @@ const STEP: Record<OpenStatus, { title: string; yes: string; done: string }> = {
 interface Props {
   applicationId: string;
   status: OpenStatus;
-  summary: string; // "Mark A. Dizon · Vacation Leave · 2 day(s) · Dec 1 – Dec 2, 2026"
+  summary: string; // "Mark A. Dizon · Vacation Leave · 2 days · Dec 1 – Dec 2, 2026"
   approvalNote: string | null; // what happens on final approval (credits deducted)
   children?: React.ReactNode;
 }

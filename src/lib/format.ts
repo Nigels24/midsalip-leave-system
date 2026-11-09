@@ -65,3 +65,17 @@ export function greeting(now: Date = new Date()) {
   const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", hourCycle: "h23" }).format(now));
   return hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }
+
+/** "Pepito, Joanna R." -> "PEPITO, JOANNA R.": a name in capitals, as printed on CS Form 6 (item 2 and the signature lines). */
+export function upperName(name: string) {
+  return name.toLocaleUpperCase("en-PH");
+}
+
+/**
+ * 1 -> "1 day", 2 -> "2 days", 0.5 -> "0.5 days", 0 -> "0 days" (only exactly 1 is singular). Accepts numbers, strings and Prisma.Decimal.
+ * `kind` adds a word in front of "day", e.g. pluralDays(3, "calendar") -> "3 calendar days".
+ */
+export function pluralDays(value: number | string | { toString(): string }, kind = "") {
+  const word = Number(value.toString()) === 1 ? "day" : "days";
+  return `${fmtNum(value)} ${kind ? `${kind} ` : ""}${word}`;
+}

@@ -1,10 +1,12 @@
 "use server";
-// My Profile: save or remove the logged-in user's own e-signature.
+// My Profile: save or remove the logged-in user's own e-signature, and change the password.
+// Also the action of /change-password, where a new or reset account must pick its own password.
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "../lib/db";
 import { checkSignatureDataUrl, SIGNATURE_MAX_BYTES } from "../lib/signature";
-import { requireUser } from "./auth";
+import { requireSignedIn, requireUser } from "./auth";
 import { changeOwnPassword, passwordSchema } from "./employee-rules";
 import { LeaveError } from "./leave";
 
@@ -44,20 +46,38 @@ export async function setSignatureAction(value: string | null): Promise<ActionRe
   return { error: null };
 }
 
-/** Any user changes their own password (current password required). */
-export async function changePasswordAction(_prev: ActionResult & { message?: string }, formData: FormData): Promise<ActionResult & { message?: string }> {
-  const user = await requireUser();
+export type PasswordState = ActionResult & { message?: string };
+
+/** Reads the three fields and calls changeOwnPassword(). Returns an error message, or null when saved. */
+async function savePassword(userId: string, formData: FormData): Promise<string | null> {
   const current = String(formData.get("current") ?? "");
   const parsed = passwordSchema.safeParse(String(formData.get("password") ?? ""));
-  if (!current) return { error: "Enter your current password." };
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Invalid password." };
-  if (parsed.data !== String(formData.get("confirm") ?? "")) return { error: "The new passwords do not match." };
-
+  if (!current) return "Enter your current password.";
+  if (!parsed.success) return parsed.error.issues[0]?.message ?? "Invalid password.";
+  if (parsed.data !== String(formData.get("confirm") ?? "")) return "The new passwords do not match.";
   try {
-    await changeOwnPassword(db, user.id, current, parsed.data);
+    await changeOwnPassword(db, userId, current, parsed.data);
   } catch (error) {
-    if (error instanceof LeaveError) return { error: error.message };
+    if (error instanceof LeaveError) return error.message;
     throw error;
   }
-  return { error: null, message: "Your password was changed." };
+  return null;
+}
+
+/** My Profile: any user changes their own password (current password required). */
+export async function changePasswordAction(_prev: PasswordState, formData: FormData): Promise<PasswordState> {
+  const user = await requireUser();
+  const error = await savePassword(user.id, formData);
+  return error ? { error } : { error: null, message: "Your password was changed." };
+}
+
+/**
+ * /change-password: the one action allowed while the password must still be changed
+ * (requireSignedIn instead of requireUser). On success the app opens normally.
+ */
+export async function changeRequiredPasswordAction(_prev: PasswordState, formData: FormData): Promise<PasswordState> {
+  const user = await requireSignedIn();
+  const error = await savePassword(user.id, formData);
+  if (error) return { error };
+  redirect("/dashboard"); // outside try/catch: redirect() works by throwing
 }

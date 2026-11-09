@@ -3,6 +3,7 @@
 // Asks for the new password twice (what you type is not shown), then saves it hashed exactly
 // as the app does (resetPasswordFromConsole() in src/server/employee-rules.ts) and writes an
 // Audit Trail row with no actor. The password and its hash are never printed.
+// The account must change this password at its next sign-in, and a sign-in lock is lifted.
 //
 // Unlike the other scripts it runs with tsx (see package.json), because it reuses the app's
 // TypeScript rules and the Prisma client instead of copying them. Works on Windows, macOS and Linux.
@@ -88,7 +89,7 @@ async function main() {
 
   try {
     const name = await resetPasswordFromConsole(db, username, password);
-    console.log(`Password of ${name} was reset. Sign in with the new password, then change it on My Profile if you wish.`);
+    console.log(`Password of ${name} was reset and the account is unlocked. Sign in with it: the system then asks for a new password.`);
     return 0;
   } catch (error) {
     if (!(error instanceof LeaveError)) throw error;

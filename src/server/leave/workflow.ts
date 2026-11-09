@@ -5,6 +5,7 @@
 import type { ActionStep, ApplicationStatus, Prisma, Role } from "../../generated/prisma/client";
 import { isOpen } from "../../lib/constants";
 import { toDbDate, todayInManila } from "../../lib/dates";
+import { pluralDays } from "../../lib/format";
 import { fullName } from "../../lib/utils";
 import { balance, ZERO } from "./credits";
 import { LeaveError } from "./errors";
@@ -188,7 +189,7 @@ export async function actOn(
         tx,
         await actorsFor(tx, { status: next, employeeId: app.employeeId }),
         "Leave application awaiting action",
-        `${applicantName} – ${type.name} (${app.days} day/s) was ${STEP_TEXT[step]} and now needs your action.`,
+        `${applicantName} – ${type.name} (${pluralDays(app.days)}) was ${STEP_TEXT[step]} and now needs your action.`,
         app.id,
       );
     }

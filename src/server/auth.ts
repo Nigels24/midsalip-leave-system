@@ -20,8 +20,9 @@ export const getCurrentUser = cache(async () => {
   const user = await db.employee.findUnique({
     where: { id: employeeId },
     include: { office: true },
-    // Never load the password hash; the signature image is large and not needed here.
-    omit: { passwordHash: true, signature: true },
+    // Never load the password hash; the signature image is large and not needed here,
+    // and the sign-in counters belong to login-rules.ts only.
+    omit: { passwordHash: true, signature: true, failedLoginCount: true, lockedUntil: true },
   });
   if (!user || !user.active) return null;
   return user;
@@ -29,8 +30,22 @@ export const getCurrentUser = cache(async () => {
 
 export type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
 
-/** Use at the top of every protected page and server action. Sends visitors to /login. */
+/**
+ * Use at the top of every protected page and server action. Sends visitors to /login.
+ * While the account must change its password (new or reset account), every page and every
+ * server action that calls this goes to /change-password instead, so nothing else can run.
+ */
 export async function requireUser(): Promise<CurrentUser> {
+  const user = await requireSignedIn();
+  if (user.mustChangePassword) redirect("/change-password");
+  return user;
+}
+
+/**
+ * Signed in, even if the password must still be changed. ONLY for the /change-password page
+ * and its server action; everything else uses requireUser() or requireRole().
+ */
+export async function requireSignedIn(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   return user;

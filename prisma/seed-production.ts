@@ -100,6 +100,7 @@ async function main() {
           monthlySalary: "0",
           originalAppointment: toDbDate(todayInManila()),
           passwordHash: await bcrypt.hash(password, 10),
+          mustChangePassword: true, // the starter password comes from .env, so each person picks their own at first sign-in
         },
         select: { id: true },
       });
@@ -126,7 +127,7 @@ async function main() {
   console.log(`  leave types  ${leaveTypes}`);
   console.log(`  holidays     ${holidayCount} in total (${holidaysAdded} added now, ${holidaysThisYear} in ${thisYear})`);
   console.log(`  employees    ${employees}`);
-  console.log(created.length > 0 ? `  created      ${created.join(", ")} (password = SEED_ADMIN_PASSWORD)` : "  starter accounts already exist (left unchanged)");
+  console.log(created.length > 0 ? `  created      ${created.join(", ")} (password = SEED_ADMIN_PASSWORD, to be changed at first sign-in)` : "  starter accounts already exist (left unchanged)");
   if (holidaysThisYear === 0) console.log(`  NOTE: there are no holidays for ${thisYear} yet. The HRMO adds them on the Holidays page.`);
 }
 

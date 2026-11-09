@@ -4,17 +4,14 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { QrCode } from "lucide-react";
 import { Seal } from "@/components/seal";
-import { DEMO_ACCOUNTS, DEMO_PASSWORD } from "@/config/demo-accounts";
 import { APP } from "@/lib/constants";
 import { getCurrentUser } from "@/server/auth";
 import { LoginForm } from "./login-form";
 
 export default async function LoginPage() {
-  // Already signed in (checked against the database) -> go straight to the dashboard.
-  if (await getCurrentUser()) redirect("/dashboard");
-
-  // The demo list is for the defense and testing only; it is hidden unless .env turns it on.
-  const demo = process.env.SHOW_DEMO_ACCOUNTS === "true" ? { accounts: DEMO_ACCOUNTS, password: DEMO_PASSWORD } : null;
+  // Already signed in (checked against the database) -> go straight in.
+  const user = await getCurrentUser();
+  if (user) redirect(user.mustChangePassword ? "/change-password" : "/dashboard");
 
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
@@ -51,7 +48,7 @@ export default async function LoginPage() {
             </div>
           </div>
 
-          <LoginForm office={APP.office} demo={demo} />
+          <LoginForm office={APP.office} />
 
           <Link href="/verify" className="mt-6 flex items-center justify-center gap-2 text-sm font-medium text-brand-600 hover:underline">
             <QrCode size={16} /> Verify a leave document
