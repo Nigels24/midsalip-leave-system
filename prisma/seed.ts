@@ -14,7 +14,7 @@ import { MONTHLY_ACCRUAL } from "../src/lib/constants";
 import { CREDIT_EARNING_STATUSES } from "../src/lib/leave-types";
 import { toDbDate } from "../src/lib/dates";
 import { normalizeUsername } from "../src/lib/utils";
-import { OFFICES as BASE_OFFICES, seedHolidays, seedLeaveTypes } from "./seed-data";
+import { OFFICES as BASE_OFFICES, seedHolidays, seedLeaveTypes, seedSalarySchedule } from "./seed-data";
 
 /** Password of every demo account (development only). */
 const DEMO_PASSWORD = "demo123";
@@ -144,8 +144,9 @@ async function main() {
   // 4. Leave types (defaults explained at the top of src/lib/leave-types.ts).
   await seedLeaveTypes(db);
 
-  // 5. Holidays.
+  // 5. Holidays and the 2026 national salary schedule (only while the table is empty).
   await seedHolidays(db);
+  await seedSalarySchedule(db);
 
   // 6. Opening balances from the paper leave cards.
   for (const row of EMPLOYEES) {
@@ -229,6 +230,7 @@ async function printSummary(earnerCount: number) {
   console.log(`  employees    ${employees}`);
   console.log(`  leave types  ${leaveTypes}`);
   console.log(`  holidays     ${holidays}`);
+  console.log(`  salary sched ${await db.salarySchedule.count()} grade/step rows`);
   console.log(`  signatures   ${withSignature} employees have an e-signature`);
   console.log(`  ledger       ${openingRows} opening rows, ${accrualRows} accrual rows (expected ${earnerCount * ACCRUAL_MONTHS.length * 2})`);
   // Every application must record who encoded it (the employee, or an HRMO on their behalf).

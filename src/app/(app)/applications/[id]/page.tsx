@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { COMMUTATION_LABELS, isOpen, OPEN_STATUSES } from "@/lib/constants";
 import { db } from "@/lib/db";
 import { todayInManila } from "@/lib/dates";
-import { fmtDate, fmtDateTime, fmtNum, fmtRange, pluralDays } from "@/lib/format";
+import { fmtDate, fmtDateTime, fmtNum, fmtRange, fmtSalaryGrade, pluralDays } from "@/lib/format";
 import { CALENDAR_DAY_TYPES, type LeaveDetails } from "@/lib/leave-types";
 import { fullName } from "@/lib/utils";
 import { canViewApplication } from "@/server/application-access";
@@ -140,7 +140,7 @@ export default async function ApplicationPage({
             <CardContent>
               <dl className="grid gap-x-6 gap-y-4 text-sm sm:grid-cols-2">
                 <Item k="Employee" v={`${fullName(e)} (${e.employeeNo})`} />
-                <Item k="Position" v={`${e.position} · SG ${e.salaryGrade}`} />
+                <Item k="Position" v={[e.position, fmtSalaryGrade(e.salaryGrade, e.salaryStep)].filter(Boolean).join(" · ")} />
                 <Item k="Leave type" v={t.name} />
                 <Item
                   k="Credit charged to"

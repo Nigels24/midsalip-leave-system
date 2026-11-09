@@ -10,7 +10,7 @@ Run first, all must pass:
 ```
 npm run lint
 npm run build
-npm run verify:engine        # scenarios a to v, "All checks passed."
+npm run verify:engine        # scenarios a to w, "All checks passed." (on the demo database, see README "Running verify:engine")
 ```
 
 ### Developer test data (developers only, never on the municipal server)
@@ -159,6 +159,27 @@ On the demo data, with a throwaway employee the HRMO adds (e.g. username `lockte
 - [ ] Edit the date and name; delete it (with a confirmation). An application filed before the change keeps its day count.
 - [ ] The Audit Trail shows ADD HOLIDAY, UPDATE HOLIDAY and DELETE HOLIDAY rows.
 
+## L3. Salary Schedule (HRMO)
+
+- [ ] "Salary Schedule" is in the sidebar for `hrmo` only, under Holidays; `jpepito`, `treasurer` and `mayor` opening `/salary-schedule` go to the dashboard.
+- [ ] The grid shows SG 1 to 33 with Steps 1 to 8, SG 33 only Steps 1 and 2. Spot-check against DBM NBC No. 601 Annex A: SG 1 Step 1 = 14,634; SG 11 Step 1 = 31,705, Step 8 = 33,611; SG 15 Step 8 = 45,202; SG 33 Step 2 = 462,329.
+- [ ] On a fresh database the percentage says "Not set yet: 100% is used". Save `90`: every amount for this LGU becomes 90% rounded to the peso (SG 15 Step 1: 42,178 × 0.9 = 37,960.2 → ₱37,960). `0`, `101` and `abc` are refused. Set it back to `100`.
+- [ ] Click SG 15 Step 3, change it to `43,100` and save: the cell updates. `0` and `-5` are refused and the dialog keeps the typed value. Change it back to `43015`.
+- [ ] Import: paste `grade,step,amount` plus `1,1,14634` and `15,3,43100` and click **Check**: "2 line(s) read: 0 new, 1 changed, 1 the same". Confirm **Import**: SG 15 Step 3 is 43,100. Import `15,3,43015` to put it back.
+- [ ] Import with errors (`34,1,100`, `33,3,100`, `1,1,0`, the same grade and step twice): each line is listed with its line number and nothing is saved. Lines copied from Excel (tab-separated) are accepted.
+- [ ] The Audit Trail shows SET SALARY PERCENT, UPDATE SALARY SCHEDULE and IMPORT SALARY SCHEDULE rows.
+- [ ] Running `npm run db:seed:production` (or `npm run setup`) again does not undo an edited amount.
+
+### Salary on Add / Edit employee
+
+- [ ] Add employee, Permanent: type `43015` (or `43,015`) as monthly salary: grade SG 15 and Step 3 are filled in, with the green line "Matches SG 15, Step 3".
+- [ ] Type `43100`: amber "Closest: SG 15 Step 3 (₱43,015), please confirm" with a **Use** button; grade and step change only when it is clicked. Type `14000`: amber "Below SG 1 Step 1".
+- [ ] With the percentage at 90%, typing `37960` matches SG 15 Step 1.
+- [ ] Choose SG 33: the Step list has only Steps 1 and 2. A step chosen earlier above 2 is cleared.
+- [ ] Choose COS or Job Order: grade and step are hidden, nothing is filled in, and the saved employee has no grade. Elective: the grade is optional.
+- [ ] Permanent without a grade is refused with a clear message.
+- [ ] An application of an employee without a grade shows only the position (no "SG null"); with a grade and step it shows "Position · SG 15 Step 3".
+
 ## M. Monthly credits (HRMO)
 
 - [ ] The preview lists only active Permanent, Casual and Coterminous employees appointed by that month.
@@ -222,7 +243,7 @@ Uses a second database on port **5434** so your development database is not touc
    npm run start:lan
    ```
 4. Check:
-   - [ ] Setup prints "Production seed complete": 7 offices (2 with a head), 14 leave types, 16 holidays, 2 employees, and the starter password.
+   - [ ] Setup prints "Production seed complete": 7 offices (2 with a head), 14 leave types, 16 holidays, 258 salary schedule rows (percentage not set yet), 2 employees, and the starter password.
    - [ ] Running `npm run setup` again succeeds and says the starter accounts already exist.
    - [ ] Rename an office and delete one 2026 holiday, then run `npm run setup` again: the old office and the holiday do not come back.
    - [ ] The login page shows no demo accounts. `hrmo` and `mayor` log in with the printed password and are sent to **Choose your own password** before anything else.

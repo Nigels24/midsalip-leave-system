@@ -5,6 +5,8 @@
 //   - the 7 offices (only on a new install, so offices the HRMO renamed are not added back),
 //     the 14 leave types and the listed holidays of this year and next year (prisma/seed-data.ts;
 //     only for a year that has no holidays yet, so the HRMO's edits on /holidays are kept);
+//   - the 2026 national salary schedule (DBM NBC No. 601, Annex A), only while the table is empty,
+//     so amounts the HRMO edited or imported on /salary-schedule are kept;
 //   - two starter accounts, because approvals need an HRMO and an Approving Authority:
 //       "hrmo"  (HRMO, heads the Human Resource Management Office)
 //       "mayor" (Approving Authority, heads the Office of the Municipal Mayor)
@@ -21,7 +23,7 @@ import type { EmploymentStatus, Role, Sex } from "../src/generated/prisma/client
 import { db } from "../src/lib/db";
 import { toDbDate, todayInManila, yearOf } from "../src/lib/dates";
 import { normalizeUsername } from "../src/lib/utils";
-import { OFFICES, seedHolidays, seedLeaveTypes } from "./seed-data";
+import { OFFICES, seedHolidays, seedLeaveTypes, seedSalarySchedule } from "./seed-data";
 
 interface StarterAccount {
   username: string;
@@ -72,6 +74,7 @@ async function main() {
   await seedLeaveTypes(db);
   const thisYear = yearOf(todayInManila());
   const holidaysAdded = await seedHolidays(db, [thisYear, thisYear + 1]);
+  const scheduleAdded = await seedSalarySchedule(db);
 
   // 3. Starter accounts: created only if the username does not exist yet,
   //    so a later edit or password change is never undone.
@@ -96,8 +99,7 @@ async function main() {
           status: s.status,
           role: s.role,
           username,
-          salaryGrade: 1,
-          monthlySalary: "0",
+          monthlySalary: "0", // grade, step and salary are entered by the HRMO with the real names
           originalAppointment: toDbDate(todayInManila()),
           passwordHash: await bcrypt.hash(password, 10),
           mustChangePassword: true, // the starter password comes from .env, so each person picks their own at first sign-in
@@ -114,18 +116,21 @@ async function main() {
   }
 
   // 4. Summary.
-  const [offices, withHead, employees, leaveTypes, holidayCount, holidaysThisYear] = await Promise.all([
+  const [offices, withHead, employees, leaveTypes, holidayCount, holidaysThisYear, scheduleRows, percent] = await Promise.all([
     db.office.count(),
     db.office.count({ where: { headId: { not: null } } }),
     db.employee.count(),
     db.leaveType.count(),
     db.holiday.count(),
     db.holiday.count({ where: { date: { gte: toDbDate(`${thisYear}-01-01`), lte: toDbDate(`${thisYear}-12-31`) } } }),
+    db.salarySchedule.count(),
+    db.appSetting.findUnique({ where: { key: "salaryPercent" } }),
   ]);
   console.log("\nProduction seed complete:");
   console.log(`  offices      ${offices} (with a head: ${withHead})`);
   console.log(`  leave types  ${leaveTypes}`);
   console.log(`  holidays     ${holidayCount} in total (${holidaysAdded} added now, ${holidaysThisYear} in ${thisYear})`);
+  console.log(`  salary sched ${scheduleRows} grade/step rows (${scheduleAdded} added now), LGU percentage ${percent ? `${percent.value}%` : "not set yet (100% used)"}`);
   console.log(`  employees    ${employees}`);
   console.log(created.length > 0 ? `  created      ${created.join(", ")} (password = SEED_ADMIN_PASSWORD, to be changed at first sign-in)` : "  starter accounts already exist (left unchanged)");
   if (holidaysThisYear === 0) console.log(`  NOTE: there are no holidays for ${thisYear} yet. The HRMO adds them on the Holidays page.`);

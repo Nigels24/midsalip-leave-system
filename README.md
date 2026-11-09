@@ -92,19 +92,31 @@ You can run `npm run setup` again at any time. It never deletes data and never r
 2. The system asks for a **new password** right away: type the first password once more, then your
    new password twice. Do the same for **`mayor`** (sign in as `mayor`). Then open the `.env` file in the system folder with Notepad and delete the line that starts with
    `SEED_ADMIN_PASSWORD`.
-3. Go to **Employees & Accounts**:
+3. Go to **Salary Schedule** first:
+   - Type the **percentage** of the national salary schedule that this municipality pays (the percentage
+     the Sangguniang Bayan approved for the municipality's income class) and click **Save**.
+   - Check the amounts in the table against the salary schedule approved by the Sangguniang Bayan. The
+     amount for the municipality is the national amount times the percentage, rounded to the nearest peso.
+     To correct one amount, click it. The 2026 national schedule (DBM National Budget Circular No. 601)
+     is already loaded.
+   - **Every year**, when DBM issues the new salary schedule, paste it in **Import a new schedule**
+     (one line per grade and step: `grade,step,amount`), click **Check**, then **Import**.
+4. Go to **Employees & Accounts**:
    - Open the two starter accounts ("Starter HRMO" and "Starter Mayor") and enter the **real names**,
-     sex, position, salary grade and date of appointment.
+     sex, position, monthly salary and date of appointment.
+   - When you type the **monthly salary**, the **salary grade and step** are filled in. If the salary is not
+     exactly in the schedule, the closest grade and step below it is shown in orange: click **Use** if it is
+     right, or choose the grade and step yourself. COS and Job Order workers have no salary grade.
    - **Add every employee** (Add employee). Give each one a temporary password. At their first sign-in the
      system makes them choose their own password. Enter their opening VL and SL balances from the paper leave card.
    - In **Offices**, check the office names. **Add office** for any office that is missing, or
      **Rename** one. Then set the **head of each office**. Employees of an office without a head cannot
      file leave yet.
-4. Go to **Holidays** and check this year's non-working holidays. **Every year**, when Malacañang
+5. Go to **Holidays** and check this year's non-working holidays. **Every year**, when Malacañang
    publishes the proclamation of next year's holidays, choose next year and **Add holiday** for each
    date. Holidays are skipped when the working days of a leave are counted.
-5. Ask each signee (department heads, HRMO, mayor) to set their **e-signature** on **My Profile**.
-6. **Every month**, the HRMO posts the leave credits: **Employees & Accounts → Post monthly credits**,
+6. Ask each signee (department heads, HRMO, mayor) to set their **e-signature** on **My Profile**.
+7. **Every month**, the HRMO posts the leave credits: **Employees & Accounts → Post monthly credits**,
    choose the month, check the list, and confirm. Posting the same month twice adds nothing.
 
 ## 6. Back up and restore
@@ -202,18 +214,35 @@ usernames `hrmo` and `mayor` (with different employee numbers), so the demo seed
 
 ```
 npx prisma migrate reset --force   # deletes everything and re-creates the tables; Prisma 7 does not seed here
-npm run db:seed:production         # offices, leave types, holidays, starter accounts hrmo and mayor
+npm run db:seed:production         # offices, leave types, holidays, salary schedule, starter accounts hrmo and mayor
 ```
 
 The starter password is `SEED_ADMIN_PASSWORD` in `.env`. Do not use `npm run db:reset` for this: it
 adds `prisma db seed`, which is the demo seed.
+
+**Running verify:engine when your database is production-style.** The rule scenarios need the demo
+accounts, so run them on a second, developer-only database in the same Docker container. Your
+production-style database is not touched. On macOS or Linux:
+
+```
+docker exec midsalip-postgres createdb -U postgres midsalip_dev        # once
+export DATABASE_URL="postgresql://postgres:secret@localhost:5433/midsalip_dev"
+npx prisma migrate deploy
+npm run db:seed
+npm run verify:engine
+unset DATABASE_URL                                                      # back to the database in .env
+```
+
+(On Windows PowerShell use `$env:DATABASE_URL="..."` and `Remove-Item Env:DATABASE_URL`.) A
+`DATABASE_URL` set in the terminal wins over `.env`. The pure checks (o, p, s, w) also run on a
+production-style database. The rule scenarios then stop with "demo data present ... FAIL".
 
 **Folders**
 
 ```
 prisma/schema.prisma        database tables            prisma/migrations/   schema history
 prisma/seed.ts              demo data (developers only) prisma/seed-production.ts  real install start data
-prisma/seed-data.ts         offices, holidays, leave types shared by both seeds
+prisma/seed-data.ts         offices, holidays, leave types, 2026 salary schedule shared by both seeds
 prisma/verify-engine.ts     self-check of the rules (npm run verify:engine)
 scripts/                    setup, wait-for-db, backup, restore (plain Node), reset-password (tsx); all work on Windows
 src/app/                    pages ((app) = signed in, verify = public QR pages)
@@ -240,10 +269,10 @@ docker-compose.yml          PostgreSQL 16 for local use
 | `db:migrate` | Create/apply a migration in development (`prisma migrate dev`) |
 | `db:deploy` | Apply migrations without prompts (`prisma migrate deploy`), as used by setup |
 | `db:seed` | Demo seed (developers only, never on the municipal server) |
-| `db:seed:production` | Production seed (offices, leave types, holidays, starter accounts) |
+| `db:seed:production` | Production seed (offices, leave types, holidays, salary schedule, starter accounts); safe to run again |
 | `db:reset` | **Deletes all data**, re-creates the tables and loads the demo seed (developers only) |
 | `db:backup` / `db:restore` | Backup to / restore from `backups/*.sql` through `docker exec` |
-| `verify:engine` | Self-check of the leave rules on the demo data (rolled back; exit code 1 on failure) |
+| `verify:engine` | Self-check of the leave rules on the demo data (rolled back; exit code 1 on failure). Needs the demo seed: see "Running verify:engine" below |
 | `reset-password` | `npm run reset-password -- <username>`: set a new password from the server console (hidden input, audit row with no actor) |
 
 **Settings (.env)**: see `.env.example`. `COOKIE_SECURE` controls the HTTPS-only cookie (off by default

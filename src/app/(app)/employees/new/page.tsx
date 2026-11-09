@@ -7,12 +7,16 @@ import { rolesFor } from "@/config/nav";
 import { db } from "@/lib/db";
 import { todayInManila } from "@/lib/dates";
 import { requireRole } from "@/server/auth";
+import { loadEffectiveSchedule } from "@/server/salary-rules";
 import { EmployeeForm } from "../employee-form";
 
 export default async function NewEmployeePage() {
   await connection();
   await requireRole(...rolesFor("/employees"));
-  const offices = await db.office.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const [offices, schedule] = await Promise.all([
+    db.office.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    loadEffectiveSchedule(db), // plain numbers (whole pesos), never Decimal
+  ]);
 
   return (
     <>
@@ -24,6 +28,7 @@ export default async function NewEmployeePage() {
         <CardContent>
           <EmployeeForm
             offices={offices}
+            schedule={schedule}
             values={{
               employeeNo: "",
               firstName: "",
@@ -31,7 +36,8 @@ export default async function NewEmployeePage() {
               lastName: "",
               sex: "FEMALE",
               position: "",
-              salaryGrade: "1",
+              salaryGrade: "",
+              salaryStep: "",
               monthlySalary: "",
               officeId: offices[0]?.id ?? "",
               status: "PERMANENT",

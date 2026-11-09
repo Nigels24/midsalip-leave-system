@@ -14,6 +14,7 @@ import { fmtDateTime } from "@/lib/format";
 import { fullName } from "@/lib/utils";
 import { requireRole } from "@/server/auth";
 import { isLocked } from "@/server/login-rules";
+import { loadEffectiveSchedule } from "@/server/salary-rules";
 import { AccountPanel } from "./account-panel";
 import { EmployeeForm } from "../employee-form";
 
@@ -23,7 +24,7 @@ export default async function EditEmployeePage({ params, searchParams }: { param
   const { id } = await params;
   const { created } = await searchParams;
 
-  const [e, offices, openApplications] = await Promise.all([
+  const [e, offices, openApplications, schedule] = await Promise.all([
     db.employee.findUnique({
       where: { id },
       omit: { passwordHash: true, signature: true }, // never loaded for this page
@@ -31,6 +32,7 @@ export default async function EditEmployeePage({ params, searchParams }: { param
     }),
     db.office.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.leaveApplication.count({ where: { employeeId: id, status: { in: OPEN_STATUSES } } }),
+    loadEffectiveSchedule(db), // plain numbers (whole pesos), never Decimal
   ]);
   if (!e) notFound();
 
@@ -81,6 +83,7 @@ export default async function EditEmployeePage({ params, searchParams }: { param
             <EmployeeForm
               employeeId={e.id}
               offices={offices}
+              schedule={schedule}
               values={{
                 employeeNo: e.employeeNo,
                 firstName: e.firstName,
@@ -88,7 +91,8 @@ export default async function EditEmployeePage({ params, searchParams }: { param
                 lastName: e.lastName,
                 sex: e.sex,
                 position: e.position,
-                salaryGrade: String(e.salaryGrade),
+                salaryGrade: e.salaryGrade === null ? "" : String(e.salaryGrade),
+                salaryStep: e.salaryStep === null ? "" : String(e.salaryStep),
                 monthlySalary: e.monthlySalary.toString(),
                 officeId: e.officeId,
                 status: e.status,

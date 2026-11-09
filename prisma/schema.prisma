@@ -92,7 +92,10 @@ model Employee {
   lastName            String
   sex                 Sex
   position            String
-  salaryGrade         Int
+  // Salary grade 1 to 33 and step 1 to 8 (grade 33: steps 1 and 2) of the salary schedule
+  // (SalarySchedule below). Null for COS and JO workers, who have no grade, and optional for elective officials.
+  salaryGrade         Int?
+  salaryStep          Int?
   monthlySalary       Decimal          @db.Decimal(12, 2)
   officeId            String
   office              Office           @relation("OfficeEmployees", fields: [officeId], references: [id])
@@ -250,6 +253,17 @@ model Holiday {
 }
 
 model AppSetting {
-  key   String @id // e.g. "lastAccrualMonth"
+  key   String @id // e.g. "lastAccrualMonth", "salaryPercent"
   value String
+}
+
+// The NATIONAL monthly salary schedule (DBM; for 2026: NBC No. 601, Annex A), one row per grade and step.
+// The LGU pays a percentage of it (AppSetting "salaryPercent", set by the Sanggunian), so the amount this
+// LGU pays is computed when needed (src/server/salary-rules.ts), never stored. Edited on /salary-schedule.
+model SalarySchedule {
+  grade  Int // 1 to 33
+  step   Int // 1 to 8 (grade 33: 1 and 2)
+  amount Decimal @db.Decimal(10, 2) // national monthly amount in pesos
+
+  @@id([grade, step]) // one amount per grade and step
 }

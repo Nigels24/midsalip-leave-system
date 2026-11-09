@@ -2,6 +2,8 @@
 //   npm run verify:engine
 // Everything runs inside ONE transaction that is rolled back at the end,
 // so the database is left exactly as it was. Needs the DEMO seed data (npm run db:seed, developer only).
+// The pure checks (o, p, q's helpers, s, w) need no demo data; on a database without it the
+// database scenarios are skipped with a FAIL that says so.
 import "dotenv/config";
 import { Prisma, type Sex, type EmploymentStatus } from "../src/generated/prisma/client";
 import { db } from "../src/lib/db";
@@ -32,6 +34,8 @@ import { leaveCardRows } from "../src/lib/leave-card";
 import { BOM, csvCell, toCsv } from "../src/lib/csv";
 import { monthlyTotals, safeAuditDetail, sumDecimals } from "../src/lib/report-math";
 import { normalizeRefNo, publicVerifyResult, verifyUrl, type VerifyRecord } from "../src/lib/verify";
+import { allGradeSteps, isValidGradeStep, matchSalary, maxStep, parseScheduleCsv, toCentavos, type ScheduleRow } from "../src/lib/salary-grade";
+import { effectiveAmount, percentSchema } from "../src/server/salary-rules";
 
 type Tx = Prisma.TransactionClient;
 
@@ -277,6 +281,7 @@ async function scenarios(tx: Tx) {
     sex: "MALE",
     position: "Test",
     salaryGrade: "1",
+    salaryStep: "",
     monthlySalary: "",
     officeId: "MEO",
     status: "PERMANENT",
@@ -551,11 +556,91 @@ function reportChecks() {
   check("audit detail hides a signature data URL", safeAuditDetail("sig data:image/png;base64,iVBORw0KGgo= end") === "sig [image] end");
 }
 
+/** w) Salary schedule: grade/step lookup, LGU percentage and rounding, pasted schedule, employee fields (pure, no database). */
+function salaryChecks() {
+  console.log("\nw) Salary schedule");
+  // A small fixed schedule (official 2026 amounts), so these checks do not depend on any seeded data.
+  const schedule: ScheduleRow[] = [
+    { grade: 1, step: 1, amount: 14634 },
+    { grade: 1, step: 2, amount: 14730 },
+    { grade: 15, step: 3, amount: 43015 },
+    { grade: 15, step: 4, amount: 43442 },
+    { grade: 33, step: 1, amount: 449157 },
+    { grade: 33, step: 2, amount: 462329 },
+  ];
+  const show = (m: ReturnType<typeof matchSalary>) => JSON.stringify(m);
+  const exact = matchSalary("43015", schedule);
+  check("exact salary -> SG 15 Step 3", exact.kind === "exact" && exact.grade === 15 && exact.step === 3, show(exact));
+  check("commas, peso sign and .00 are accepted", show(matchSalary("₱ 43,015.00", schedule)) === show(exact));
+  const near = matchSalary("43441.99", schedule);
+  check("no exact match -> closest at or below (SG 15 Step 3, not Step 4)", near.kind === "closest" && near.grade === 15 && near.step === 3 && near.amount === 43015, show(near));
+  const below = matchSalary("14000", schedule);
+  check("below SG 1 Step 1 -> 'below' with the lowest amount", below.kind === "below" && below.lowest === 14634, show(below));
+  const top = matchSalary("500000", schedule);
+  check("above everything -> closest is SG 33 Step 2", top.kind === "closest" && top.grade === 33 && top.step === 2, show(top));
+  check("empty, zero or not a number -> no match", ["", "0", "abc", "1.234"].every((t) => matchSalary(t, schedule).kind === "none"));
+  check("empty schedule -> no match", matchSalary("43015", []).kind === "none");
+  check("centavos are exact (14634.5 -> 1463450)", toCentavos("14,634.5") === 1463450 && toCentavos("14634.555") === null);
+
+  check("grade 33 has 2 steps, the others 8", maxStep(33) === 2 && maxStep(1) === 8 && maxStep(32) === 8);
+  check("SG 33 Step 3 and SG 34 are not valid", !isValidGradeStep(33, 3) && !isValidGradeStep(34, 1) && isValidGradeStep(33, 2));
+  check("the schedule has 258 grade/step cells", allGradeSteps().length === 32 * 8 + 2);
+
+  const eff = (national: string, percent: string) => effectiveAmount(national, percent).toString();
+  check("100% keeps the national amount", eff("45694", "100") === "45694");
+  check("90% of 42,178 = 37,960.2 -> 37,960", eff("42178", "90") === "37960");
+  check("90% of 14,635 = 13,171.5 -> 13,172 (half a peso rounds up)", eff("14635", "90") === "13172");
+  check("92.5% of 14,634 = 13,536.45 -> 13,536", eff("14634", "92.5") === "13536");
+  const at90 = schedule.map((r) => ({ ...r, amount: effectiveAmount(r.amount, "90").toNumber() }));
+  const m90 = matchSalary("38714", at90); // 90% of 43,015 = 38,713.5 -> 38,714
+  check("the lookup uses the LGU amounts (90%: 38,714 -> SG 15 Step 3)", m90.kind === "exact" && m90.grade === 15 && m90.step === 3, show(m90));
+  check("percentage 1 to 100 is accepted", ["1", "90", "92.5", "100"].every((p) => percentSchema.safeParse(p).success));
+  check("percentage 0, 101, -5 or text is refused", ["0", "101", "-5", "abc", ""].every((p) => !percentSchema.safeParse(p).success));
+
+  const pasted = parseScheduleCsv("grade,step,amount\n1,1,14634\n\n1\t2\t14,730\n15,3,\"43,015.50\"\n");
+  check("CSV: header and blank lines skipped, tabs and thousands commas read", pasted.errors.length === 0 && pasted.rows.length === 3, JSON.stringify(pasted));
+  check("CSV: amounts kept exact as text", pasted.rows.map((r) => r.amount).join("|") === "14634|14730|43015.50");
+  const bad = parseScheduleCsv("34,1,100\n33,3,100\n1,9,100\n1,1,0\n1,1,-5\n1,1,100\n1,1,200\n2,1\n");
+  const says = (line: number, text: string) => bad.errors.some((e) => e.startsWith(`Line ${line}:`) && e.includes(text));
+  check("CSV: grade 34 refused", says(1, "1 to 33"), bad.errors.join(" / "));
+  check("CSV: SG 33 Step 3 refused", says(2, "SG 33 has steps 1 to 2"));
+  check("CSV: SG 1 Step 9 refused", says(3, "SG 1 has steps 1 to 8"));
+  check("CSV: zero and negative amounts refused", says(4, "above zero") && says(5, "above zero"));
+  check("CSV: the same grade and step twice refused", says(7, "appears twice") && bad.rows.length === 1);
+  check("CSV: a line without an amount refused", says(8, "expected grade, step and amount"));
+
+  // Employee fields: what the Add employee form sends (strings; empty = not filled in).
+  const form = {
+    employeeNo: "W-1", firstName: "Salary", middleInitial: "", lastName: "Check", sex: "FEMALE", position: "Test",
+    salaryGrade: "15", salaryStep: "3", monthlySalary: "43,015", officeId: "MEO", status: "PERMANENT", role: "EMPLOYEE",
+    originalAppointment: "2025-01-02", username: "w-check", password: "temporary-123", openingVL: "", openingSL: "",
+  };
+  const ok = newEmployeeSchema.safeParse(form);
+  check("employee: SG 15 Step 3 and salary '43,015' accepted", ok.success && ok.data.salaryGrade === 15 && ok.data.salaryStep === 3 && ok.data.monthlySalary.equals(43015));
+  const cos = newEmployeeSchema.safeParse({ ...form, status: "COS" });
+  check("employee: COS saves no grade and no step", cos.success && cos.data.salaryGrade === null && cos.data.salaryStep === null);
+  const elective = newEmployeeSchema.safeParse({ ...form, status: "ELECTIVE", salaryGrade: "", salaryStep: "" });
+  check("employee: elective official may have no grade", elective.success && elective.data.salaryGrade === null);
+  check("employee: Permanent without a grade refused", !newEmployeeSchema.safeParse({ ...form, salaryGrade: "", salaryStep: "" }).success);
+  check("employee: SG 33 Step 3 refused", !newEmployeeSchema.safeParse({ ...form, salaryGrade: "33", salaryStep: "3" }).success);
+  check("employee: SG 34 refused", !newEmployeeSchema.safeParse({ ...form, salaryGrade: "34", salaryStep: "" }).success);
+  check("employee: a step without a grade refused", !newEmployeeSchema.safeParse({ ...form, status: "ELECTIVE", salaryGrade: "", salaryStep: "2" }).success);
+}
+
 async function main() {
   signatureChecks();
   verifyChecks();
   await cardAndCalendarChecks();
   reportChecks();
+  salaryChecks();
+
+  // The database scenarios need the demo seed (prisma/seed.ts). Say so clearly instead of crashing.
+  if (!(await db.employee.findUnique({ where: { username: "jpepito" }, select: { id: true } }))) {
+    check("demo data present (scenarios a to v need `npm run db:seed` on a developer database)", false, "demo account jpepito not found");
+    console.log(`\n${failures} check(s) FAILED.`);
+    process.exitCode = 1;
+    return;
+  }
   try {
     // Long timeout: the default (5 s) is too short for all scenarios in one transaction.
     await db.$transaction(

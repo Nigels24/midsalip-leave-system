@@ -20,6 +20,7 @@ import { Prisma, type EmploymentStatus, type Role } from "../generated/prisma/cl
 import { EMPLOYMENT_STATUS_LABELS, OPEN_STATUSES, ROLE_LABELS } from "../lib/constants";
 import { isIsoDate, toDbDate, todayInManila } from "../lib/dates";
 import { CREDIT_EARNING_STATUSES } from "../lib/leave-types";
+import { gradeRequired, hasNoGrade, MAX_GRADE, maxStep } from "../lib/salary-grade";
 import { fullName, normalizeUsername } from "../lib/utils";
 import { LeaveError } from "./leave/errors";
 import { isLocked } from "./login-rules";
@@ -46,8 +47,42 @@ const creditAmount = z
   .regex(/^(\d{1,4}(\.\d{1,3})?)?$/, "Opening balances are numbers with up to 3 decimals, e.g. 15.250.")
   .transform((v) => new Prisma.Decimal(v || "0"));
 
-/** The fields the HRMO can edit (everything except the username and the password). */
-export const employeeFieldsSchema = z.object({
+/** A salary grade or step from the form: empty = none (null), otherwise a whole number. */
+const optionalWholeNumber = (label: string) =>
+  z
+    .string()
+    .trim()
+    .optional()
+    .refine((v) => !v || /^\d{1,2}$/.test(v), `${label} must be a whole number.`)
+    .transform((v) => (v ? Number(v) : null));
+
+/**
+ * Salary grade and step rules (src/lib/salary-grade.ts):
+ *  - COS and JO workers have no grade: grade and step are always saved empty;
+ *  - Permanent, Casual and Coterminous employees must have a grade; for elective officials it is optional;
+ *  - a grade is 1 to 33 and a step 1 to 8 (grade 33: 1 or 2); a step needs a grade.
+ */
+type SalaryFields = { status: EmploymentStatus; salaryGrade: number | null; salaryStep: number | null };
+
+function checkSalaryFields(v: SalaryFields, ctx: z.RefinementCtx) {
+  if (hasNoGrade(v.status)) return; // cleared by clearNoGrade()
+  const label = EMPLOYMENT_STATUS_LABELS[v.status];
+  if (v.salaryGrade === null) {
+    if (gradeRequired(v.status)) ctx.addIssue({ code: "custom", message: `Choose the salary grade (${label} employees have one).` });
+    if (v.salaryStep !== null) ctx.addIssue({ code: "custom", message: "Choose the salary grade of the step." });
+    return;
+  }
+  if (v.salaryGrade < 1 || v.salaryGrade > MAX_GRADE) ctx.addIssue({ code: "custom", message: `Salary grade is 1 to ${MAX_GRADE}.` });
+  else if (v.salaryStep !== null && (v.salaryStep < 1 || v.salaryStep > maxStep(v.salaryGrade))) {
+    ctx.addIssue({ code: "custom", message: `SG ${v.salaryGrade} has steps 1 to ${maxStep(v.salaryGrade)}.` });
+  }
+}
+
+/** COS and JO: no grade and no step, whatever the form sent. */
+const clearNoGrade = <T extends SalaryFields>(v: T): T => (hasNoGrade(v.status) ? { ...v, salaryGrade: null, salaryStep: null } : v);
+
+/** The fields the HRMO can edit (everything except the username and the password), before the salary rules. */
+const employeeFieldsBase = z.object({
   employeeNo: z.string().trim().min(1, "Employee ID No. is required.").max(30),
   firstName: z.string().trim().min(1, "First name is required.").max(60),
   middleInitial: z
@@ -58,29 +93,36 @@ export const employeeFieldsSchema = z.object({
   lastName: z.string().trim().min(1, "Last name is required.").max(60),
   sex: z.enum(["MALE", "FEMALE"], "Choose the sex."),
   position: z.string().trim().min(1, "Position is required.").max(100),
-  salaryGrade: z.coerce.number("Salary grade must be a number.").int().min(1, "Salary grade is 1 to 33.").max(33, "Salary grade is 1 to 33."),
+  salaryGrade: optionalWholeNumber("Salary grade"),
+  salaryStep: optionalWholeNumber("Step"),
   // Optional on the form; the column is required, so an empty salary is stored as 0.
+  // "33,611" and "₱33,611" are accepted (the commas and the peso sign are dropped).
   monthlySalary: z
     .string()
-    .trim()
-    .regex(/^(\d{1,9}(\.\d{1,2})?)?$/, "Monthly salary is a number with up to 2 decimals.")
+    .transform((v) => v.replace(/[₱,\s]/g, ""))
+    .pipe(z.string().regex(/^(\d{1,9}(\.\d{1,2})?)?$/, "Monthly salary is a number with up to 2 decimals."))
     .transform((v) => new Prisma.Decimal(v || "0")),
   officeId: z.string().min(1, "Choose an office."),
   status: z.enum(STATUSES, "Choose the employment status."),
   role: z.enum(ROLES, "Choose the system role."),
   originalAppointment: z.string().refine(isIsoDate, "Enter the date of original appointment."),
 });
+
+export const employeeFieldsSchema = employeeFieldsBase.superRefine(checkSalaryFields).transform(clearNoGrade);
 export type EmployeeFields = z.infer<typeof employeeFieldsSchema>;
 
-export const newEmployeeSchema = employeeFieldsSchema.extend({
-  username: z
-    .string()
-    .transform(normalizeUsername)
-    .pipe(z.string().regex(/^[a-z0-9._-]{3,30}$/, "Username: 3 to 30 letters, numbers, dots, dashes or underscores.")),
-  password: passwordSchema,
-  openingVL: creditAmount,
-  openingSL: creditAmount,
-});
+export const newEmployeeSchema = employeeFieldsBase
+  .extend({
+    username: z
+      .string()
+      .transform(normalizeUsername)
+      .pipe(z.string().regex(/^[a-z0-9._-]{3,30}$/, "Username: 3 to 30 letters, numbers, dots, dashes or underscores.")),
+    password: passwordSchema,
+    openingVL: creditAmount,
+    openingSL: creditAmount,
+  })
+  .superRefine(checkSalaryFields)
+  .transform(clearNoGrade);
 export type NewEmployee = z.infer<typeof newEmployeeSchema>;
 
 // ── Helpers ──────────────────────────────────────────────────

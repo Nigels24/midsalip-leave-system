@@ -55,6 +55,12 @@ export function peso(value: number | string | { toString(): string }) {
   return Number(value.toString()).toLocaleString("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 });
 }
 
+/** "SG 15", "SG 15 Step 3", or "" when there is no grade (COS, JO, some elective officials). Never "SG null". */
+export function fmtSalaryGrade(grade: number | null, step: number | null = null) {
+  if (grade === null) return "";
+  return step === null ? `SG ${grade}` : `SG ${grade} Step ${step}`;
+}
+
 /** "Saturday, November 7, 2026": today's date in the Philippines, for the dashboard greeting. */
 export function fmtToday(now: Date = new Date()) {
   return now.toLocaleDateString("en-PH", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric" });

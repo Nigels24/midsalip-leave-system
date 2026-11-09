@@ -1,6 +1,8 @@
 "use client";
-// Add / edit employee form. Plain strings only come in (no Decimal or Date objects).
+// Add / edit employee form. Plain strings and numbers only come in (no Decimal or Date objects).
 // The server (src/server/employee-rules.ts) validates everything again and decides.
+// Typing the monthly salary fills in the salary grade and step from this LGU's salary schedule
+// (matchSalary() in src/lib/salary-grade.ts); the HRMO can still change them by hand.
 import { startTransition, useActionState, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { EmploymentStatus } from "@/generated/prisma/client";
@@ -9,7 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/password-input";
 import { EMPLOYMENT_STATUS_LABELS, ROLE_LABELS } from "@/lib/constants";
+import { peso } from "@/lib/format";
 import { CREDIT_EARNING_STATUSES } from "@/lib/leave-types";
+import { gradeRequired, hasNoGrade, matchSalary, MAX_GRADE, maxStep, type ScheduleRow } from "@/lib/salary-grade";
 import { createEmployeeAction, updateEmployeeAction, type FormState } from "@/server/employee-actions";
 
 export interface EmployeeFormValues {
@@ -19,7 +23,8 @@ export interface EmployeeFormValues {
   lastName: string;
   sex: string;
   position: string;
-  salaryGrade: string;
+  salaryGrade: string; // "" = none
+  salaryStep: string; // "" = none
   monthlySalary: string;
   officeId: string;
   status: string;
@@ -32,9 +37,12 @@ interface Props {
   employeeId?: string; // set when editing
   values: EmployeeFormValues;
   offices: { id: string; name: string }[];
+  schedule: ScheduleRow[]; // this LGU's amounts in whole pesos (from loadEffectiveSchedule())
 }
 
-export function EmployeeForm({ employeeId, values, offices }: Props) {
+const GRADES = Array.from({ length: MAX_GRADE }, (_, i) => i + 1);
+
+export function EmployeeForm({ employeeId, values, offices, schedule }: Props) {
   const isNew = !employeeId;
   const [state, action, pending] = useActionState<FormState, FormData>(
     isNew ? createEmployeeAction : updateEmployeeAction.bind(null, employeeId),
@@ -42,6 +50,28 @@ export function EmployeeForm({ employeeId, values, offices }: Props) {
   );
   const [status, setStatus] = useState(values.status);
   const earns = CREDIT_EARNING_STATUSES.includes(status as EmploymentStatus);
+
+  // Salary, grade and step. An exact match on the salary fills in the grade and step at once;
+  // a closest match is only suggested, and the HRMO confirms it with the "Use" button.
+  const [salary, setSalary] = useState(values.monthlySalary);
+  const [grade, setGrade] = useState(values.salaryGrade);
+  const [step, setStep] = useState(values.salaryStep);
+  const noGrade = hasNoGrade(status); // COS and JO: no grade and no step
+  const match = noGrade ? ({ kind: "none" } as const) : matchSalary(salary, schedule);
+
+  const applyGradeStep = (g: number, s: number) => {
+    setGrade(String(g));
+    setStep(String(s));
+  };
+  const changeSalary = (value: string) => {
+    setSalary(value);
+    const found = matchSalary(value, schedule);
+    if (!noGrade && found.kind === "exact") applyGradeStep(found.grade, found.step);
+  };
+  const changeGrade = (value: string) => {
+    setGrade(value);
+    if (!value || Number(step) > maxStep(Number(value))) setStep(""); // e.g. SG 33 has only 2 steps
+  };
 
   useEffect(() => {
     if (state.message) toast.success(state.message);
@@ -92,14 +122,6 @@ export function EmployeeForm({ employeeId, values, offices }: Props) {
           ))}
         </select>
       </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Salary grade">
-          <Input name="salaryGrade" type="number" min={1} max={33} defaultValue={values.salaryGrade} required />
-        </Field>
-        <Field label="Monthly salary (optional)">
-          <Input name="monthlySalary" inputMode="decimal" defaultValue={values.monthlySalary} placeholder="0" />
-        </Field>
-      </div>
       <Field label="Employment status">
         <select name="status" value={status} onChange={(e) => setStatus(e.target.value)} className={selectClass} required>
           {Object.entries(EMPLOYMENT_STATUS_LABELS).map(([value, label]) => (
@@ -112,6 +134,43 @@ export function EmployeeForm({ employeeId, values, offices }: Props) {
       <Field label="Date of original appointment">
         <Input name="originalAppointment" type="date" defaultValue={values.originalAppointment} required />
       </Field>
+      <Field label="Monthly salary (optional)">
+        <Input name="monthlySalary" inputMode="decimal" value={salary} onChange={(e) => changeSalary(e.target.value)} placeholder="e.g. 43015" />
+      </Field>
+      {noGrade ? (
+        <p className="self-end pb-2 text-xs text-slate-500">
+          {EMPLOYMENT_STATUS_LABELS[status as EmploymentStatus]} workers are paid by contract, so they have no salary grade or step.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label={gradeRequired(status) ? "Salary grade" : "Salary grade (optional)"}>
+            <select name="salaryGrade" value={grade} onChange={(e) => changeGrade(e.target.value)} className={selectClass} required={gradeRequired(status)}>
+              <option value="">—</option>
+              {GRADES.map((g) => (
+                <option key={g} value={g}>
+                  SG {g}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Step">
+            <select name="salaryStep" value={step} onChange={(e) => setStep(e.target.value)} className={selectClass} disabled={!grade}>
+              <option value="">—</option>
+              {Array.from({ length: grade ? maxStep(Number(grade)) : 8 }, (_, i) => i + 1).map((s) => (
+                <option key={s} value={s}>
+                  Step {s}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      )}
+      <SalaryHint match={match} onUse={applyGradeStep} />
+      {!noGrade && schedule.length === 0 && (
+        <p className="-mt-2 text-xs text-slate-500 sm:col-span-2">
+          The salary schedule is empty, so the grade and step are not filled in. Load it on the Salary Schedule page.
+        </p>
+      )}
       <Field label="System role">
         <select name="role" defaultValue={values.role} className={selectClass} required>
           {Object.entries(ROLE_LABELS).map(([value, label]) => (
@@ -168,6 +227,35 @@ export function EmployeeForm({ employeeId, values, offices }: Props) {
       </div>
     </form>
   );
+}
+
+/** The line under the salary: green for an exact match, amber for a suggestion to confirm. */
+function SalaryHint({ match, onUse }: { match: ReturnType<typeof matchSalary>; onUse: (grade: number, step: number) => void }) {
+  if (match.kind === "exact") {
+    return (
+      <p className="-mt-2 text-xs text-emerald-700 sm:col-span-2">
+        Matches SG {match.grade}, Step {match.step}
+      </p>
+    );
+  }
+  if (match.kind === "closest") {
+    return (
+      <p className="-mt-2 flex flex-wrap items-center gap-2 text-xs text-amber-700 sm:col-span-2">
+        Closest: SG {match.grade} Step {match.step} ({peso(match.amount)}), please confirm.
+        <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => onUse(match.grade, match.step)}>
+          Use SG {match.grade} Step {match.step}
+        </Button>
+      </p>
+    );
+  }
+  if (match.kind === "below") {
+    return (
+      <p className="-mt-2 text-xs text-amber-700 sm:col-span-2">
+        Below SG 1 Step 1 ({peso(match.lowest)}) of the salary schedule. Choose the grade and step by hand.
+      </p>
+    );
+  }
+  return null;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

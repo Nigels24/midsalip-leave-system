@@ -52,6 +52,7 @@ const readFields = (formData: FormData) => ({
   sex: text(formData, "sex"),
   position: text(formData, "position"),
   salaryGrade: text(formData, "salaryGrade"),
+  salaryStep: text(formData, "salaryStep"),
   monthlySalary: text(formData, "monthlySalary"),
   officeId: text(formData, "officeId"),
   status: text(formData, "status"),
